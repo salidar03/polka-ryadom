@@ -1,0 +1,6 @@
+# Переносы строк: в репозитории LF, на Windows Git сам подставит CRLF где нужно
+* text=auto
+*.bat text eol=crlf
+*.sh text eol=lf
+*.pdf binary
+*.docx binary
