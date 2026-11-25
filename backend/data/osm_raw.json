@@ -1,0 +1,312 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.4 2390de5a",
+  "osm3s": {
+    "timestamp_osm_base": "2026-11-25T20:49:19Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 3217717727,
+  "lat": 56.6213139,
+  "lon": 47.9542008,
+  "tags": {
+    "check_date": "2026-07-18",
+    "check_date:opening_hours": "2026-07-18",
+    "name": "Вайлдберриз",
+    "opening_hours": "Mo-Su 08:00-21:00",
+    "operator": "ЗАО «Марийское»",
+    "shop": "convenience"
+  }
+},
+{
+  "type": "node",
+  "id": 9194953761,
+  "lat": 56.6448452,
+  "lon": 47.8872179,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "brand:wikipedia": "ru:Wildberries",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 9214306391,
+  "lat": 56.6367418,
+  "lon": 47.9173618,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "brand:wikipedia": "ru:Wildberries",
+    "name": "Wildberries",
+    "opening_hours": "Mo-Su 10:00-21:00",
+    "operator": "ООО \"Вайлдберриз\"",
+    "shop": "outpost",
+    "website": "https://wb.ru/",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 10538420134,
+  "lat": 56.6365075,
+  "lon": 47.8808057,
+  "tags": {
+    "check_date": "2023-01-11",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 10723034905,
+  "lat": 56.6259691,
+  "lon": 47.8860312,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "brand:wikipedia": "ru:Wildberries",
+    "contact:email": "sales@wildberries.ru",
+    "contact:facebook": "https://www.facebook.com/wbbot",
+    "contact:instagram": "https://www.instagram.com/wildberriesru",
+    "contact:ok": "https://ok.ru/wildberries",
+    "contact:telegram": "wbshop_bot",
+    "contact:twitter": "https://twitter.com/wildberries_ru",
+    "contact:viber": "wildberries",
+    "contact:vk": "https://vk.com/wbbot",
+    "contact:website": "https://www.wildberries.ru",
+    "contact:whatsapp": "+7 926 5373137",
+    "name": "Wildberries",
+    "name:en": "Wildberries",
+    "opening_hours": "Mo-Su 10:00-21:00",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 10915480936,
+  "lat": 56.6428062,
+  "lon": 47.8535739,
+  "tags": {
+    "check_date": "2023-05-21",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 11010332874,
+  "lat": 56.6323372,
+  "lon": 47.8308023,
+  "tags": {
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 11170033974,
+  "lat": 56.6251648,
+  "lon": 47.8899540,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "name:en": "Wildberries",
+    "opening_hours": "Mo-Su 10:00-21:00",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 11810173081,
+  "lat": 56.6409843,
+  "lon": 47.8628603,
+  "tags": {
+    "check_date": "2024-04-11",
+    "name": "Wildberries",
+    "opening_hours": "10:00-21:00",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 12066115369,
+  "lat": 56.6224869,
+  "lon": 47.8964866,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 12810762066,
+  "lat": 56.6222596,
+  "lon": 47.8822682,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 13184941412,
+  "lat": 56.6272678,
+  "lon": 47.8816770,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 13267603822,
+  "lat": 56.6397231,
+  "lon": 47.8624679,
+  "tags": {
+    "check_date": "2025-10-29",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 13618053082,
+  "lat": 56.6292828,
+  "lon": 47.8865638,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:en": "Wildberries",
+    "brand:ka": "ვაილდბერიზი",
+    "brand:wikidata": "Q24933714",
+    "contact:website": "https://www.ozon.ru",
+    "name": "Wildberries",
+    "name:en": "Wildberries",
+    "name:ka": "ვაილდბერიზი",
+    "opening_hours": "Mo-Su 09:00-21:00",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 13618053104,
+  "lat": 56.6240833,
+  "lon": 47.9526855,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "check_date": "2026-08-07",
+    "contact:phone": "+7 495 2321000",
+    "name": "Wildberries",
+    "opening_hours": "Mo-Su 09:00-21:00",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 13737266035,
+  "lat": 56.6443854,
+  "lon": 47.8974379,
+  "tags": {
+    "addr:city": "Йошкар-Ола",
+    "addr:housenumber": "17",
+    "addr:street": "Пролетарская улица",
+    "brand": "Wildberries",
+    "brand:en": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "name:en": "Wildberries",
+    "opening_hours": "Mo-Su 10:00-21:00",
+    "payment:cards": "yes",
+    "payment:contactless": "yes",
+    "payment:credit_cards": "yes",
+    "payment:debit_cards": "yes",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 13926242701,
+  "lat": 56.6415724,
+  "lon": 47.8922496,
+  "tags": {
+    "addr:housenumber": "46",
+    "addr:street": "Красноармейская улица",
+    "name": "Wildberries",
+    "opening_hours": "Mo-Su 09:00-21:00",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 14018117053,
+  "lat": 56.6332619,
+  "lon": 47.9355387,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 14079383991,
+  "lat": 56.6167950,
+  "lon": 47.9020701,
+  "tags": {
+    "addr:city": "Йошкар-Ола",
+    "addr:housenumber": "52",
+    "addr:street": "улица Луначарского",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "node",
+  "id": 14385226034,
+  "lat": 56.6249732,
+  "lon": 47.8834238,
+  "tags": {
+    "brand": "Wildberries",
+    "brand:en": "Wildberries",
+    "brand:ka": "ვაილდბერიზი",
+    "brand:wikidata": "Q24933714",
+    "name": "Wildberries",
+    "name:en": "Wildberries",
+    "name:ka": "ვაილდბერიზი",
+    "shop": "outpost"
+  }
+},
+{
+  "type": "way",
+  "id": 450839290,
+  "center": {
+    "lat": 56.6369921,
+    "lon": 47.9303543
+  },
+  "tags": {
+    "addr:housenumber": "5б",
+    "addr:street": "бульвар Ураева",
+    "brand": "Wildberries",
+    "brand:wikidata": "Q24933714",
+    "building": "yes",
+    "name": "Wildberries",
+    "shop": "outpost"
+  }
+}
+
+  ]
+}
