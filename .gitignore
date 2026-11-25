@@ -1,0 +1,19 @@
+# Python
+backend/.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# База (создаётся сама при запуске; внутри аккаунты и хеши паролей — в репозиторий не кладём)
+*.db
+*.db-journal
+
+# Интерфейс
+frontend/node_modules/
+frontend/dist/
+
+# Локальные настройки редакторов и инструментов
+.claude/
+.vscode/
+.idea/
+*.log
