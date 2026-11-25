@@ -11,6 +11,7 @@ __pycache__/
 # Интерфейс
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 
 # Локальные настройки редакторов и инструментов
 .claude/
