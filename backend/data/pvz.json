@@ -1,0 +1,992 @@
+[
+ {
+  "name": "ПВЗ №1",
+  "address": "",
+  "lat": 56.6448452,
+  "lon": 47.8872179,
+  "source": "osm",
+  "id": 1,
+  "weight": 54
+ },
+ {
+  "name": "ПВЗ №2",
+  "address": "",
+  "lat": 56.6367418,
+  "lon": 47.9173618,
+  "source": "osm",
+  "id": 2,
+  "weight": 16
+ },
+ {
+  "name": "ПВЗ №3",
+  "address": "",
+  "lat": 56.6365075,
+  "lon": 47.8808057,
+  "source": "osm",
+  "id": 3,
+  "weight": 31
+ },
+ {
+  "name": "ПВЗ №4",
+  "address": "",
+  "lat": 56.6259691,
+  "lon": 47.8860312,
+  "source": "osm",
+  "id": 4,
+  "weight": 61
+ },
+ {
+  "name": "ПВЗ №5",
+  "address": "",
+  "lat": 56.6428062,
+  "lon": 47.8535739,
+  "source": "osm",
+  "id": 5,
+  "weight": 16
+ },
+ {
+  "name": "ПВЗ №6",
+  "address": "",
+  "lat": 56.6323372,
+  "lon": 47.8308023,
+  "source": "osm",
+  "id": 6,
+  "weight": 15
+ },
+ {
+  "name": "ПВЗ №7",
+  "address": "",
+  "lat": 56.6251648,
+  "lon": 47.889954,
+  "source": "osm",
+  "id": 7,
+  "weight": 50
+ },
+ {
+  "name": "ПВЗ №8",
+  "address": "",
+  "lat": 56.6409843,
+  "lon": 47.8628603,
+  "source": "osm",
+  "id": 8,
+  "weight": 16
+ },
+ {
+  "name": "ПВЗ №9",
+  "address": "",
+  "lat": 56.6224869,
+  "lon": 47.8964866,
+  "source": "osm",
+  "id": 9,
+  "weight": 13
+ },
+ {
+  "name": "ПВЗ №10",
+  "address": "",
+  "lat": 56.6222596,
+  "lon": 47.8822682,
+  "source": "osm",
+  "id": 10,
+  "weight": 31
+ },
+ {
+  "name": "ПВЗ №11",
+  "address": "",
+  "lat": 56.6272678,
+  "lon": 47.881677,
+  "source": "osm",
+  "id": 11,
+  "weight": 59
+ },
+ {
+  "name": "ПВЗ №12",
+  "address": "",
+  "lat": 56.6397231,
+  "lon": 47.8624679,
+  "source": "osm",
+  "id": 12,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №13",
+  "address": "",
+  "lat": 56.6292828,
+  "lon": 47.8865638,
+  "source": "osm",
+  "id": 13,
+  "weight": 53
+ },
+ {
+  "name": "ПВЗ №14",
+  "address": "",
+  "lat": 56.6240833,
+  "lon": 47.9526855,
+  "source": "osm",
+  "id": 14,
+  "weight": 21
+ },
+ {
+  "name": "ПВЗ №15",
+  "address": "Пролетарская улица, 17",
+  "lat": 56.6443854,
+  "lon": 47.8974379,
+  "source": "osm",
+  "id": 15,
+  "weight": 28
+ },
+ {
+  "name": "ПВЗ №16",
+  "address": "Красноармейская улица, 46",
+  "lat": 56.6415724,
+  "lon": 47.8922496,
+  "source": "osm",
+  "id": 16,
+  "weight": 25
+ },
+ {
+  "name": "ПВЗ №17",
+  "address": "",
+  "lat": 56.6332619,
+  "lon": 47.9355387,
+  "source": "osm",
+  "id": 17,
+  "weight": 4
+ },
+ {
+  "name": "ПВЗ №18",
+  "address": "улица Луначарского, 52",
+  "lat": 56.616795,
+  "lon": 47.9020701,
+  "source": "osm",
+  "id": 18,
+  "weight": 7
+ },
+ {
+  "name": "ПВЗ №19",
+  "address": "",
+  "lat": 56.6249732,
+  "lon": 47.8834238,
+  "source": "osm",
+  "id": 19,
+  "weight": 54
+ },
+ {
+  "name": "ПВЗ №20",
+  "address": "бульвар Ураева, 5б",
+  "lat": 56.6369921,
+  "lon": 47.9303543,
+  "source": "osm",
+  "id": 20,
+  "weight": 18
+ },
+ {
+  "name": "ПВЗ №21",
+  "address": "",
+  "lat": 56.646487,
+  "lon": 47.870413,
+  "source": "model",
+  "id": 21,
+  "weight": 60
+ },
+ {
+  "name": "ПВЗ №22",
+  "address": "",
+  "lat": 56.641905,
+  "lon": 47.88508,
+  "source": "model",
+  "id": 22,
+  "weight": 57
+ },
+ {
+  "name": "ПВЗ №23",
+  "address": "",
+  "lat": 56.644265,
+  "lon": 47.87889,
+  "source": "model",
+  "id": 23,
+  "weight": 49
+ },
+ {
+  "name": "ПВЗ №24",
+  "address": "",
+  "lat": 56.644252,
+  "lon": 47.865832,
+  "source": "model",
+  "id": 24,
+  "weight": 48
+ },
+ {
+  "name": "ПВЗ №25",
+  "address": "",
+  "lat": 56.630487,
+  "lon": 47.880906,
+  "source": "model",
+  "id": 25,
+  "weight": 48
+ },
+ {
+  "name": "ПВЗ №26",
+  "address": "",
+  "lat": 56.648131,
+  "lon": 47.865643,
+  "source": "model",
+  "id": 26,
+  "weight": 43
+ },
+ {
+  "name": "ПВЗ №27",
+  "address": "",
+  "lat": 56.629811,
+  "lon": 47.892455,
+  "source": "model",
+  "id": 27,
+  "weight": 43
+ },
+ {
+  "name": "ПВЗ №28",
+  "address": "",
+  "lat": 56.649573,
+  "lon": 47.871464,
+  "source": "model",
+  "id": 28,
+  "weight": 42
+ },
+ {
+  "name": "ПВЗ №29",
+  "address": "",
+  "lat": 56.647033,
+  "lon": 47.882198,
+  "source": "model",
+  "id": 29,
+  "weight": 41
+ },
+ {
+  "name": "ПВЗ №30",
+  "address": "",
+  "lat": 56.639246,
+  "lon": 47.922795,
+  "source": "model",
+  "id": 30,
+  "weight": 38
+ },
+ {
+  "name": "ПВЗ №31",
+  "address": "",
+  "lat": 56.64662,
+  "lon": 47.892103,
+  "source": "model",
+  "id": 31,
+  "weight": 37
+ },
+ {
+  "name": "ПВЗ №32",
+  "address": "",
+  "lat": 56.643323,
+  "lon": 47.871871,
+  "source": "model",
+  "id": 32,
+  "weight": 35
+ },
+ {
+  "name": "ПВЗ №33",
+  "address": "",
+  "lat": 56.648205,
+  "lon": 47.876713,
+  "source": "model",
+  "id": 33,
+  "weight": 35
+ },
+ {
+  "name": "ПВЗ №34",
+  "address": "",
+  "lat": 56.646304,
+  "lon": 47.861289,
+  "source": "model",
+  "id": 34,
+  "weight": 35
+ },
+ {
+  "name": "ПВЗ №35",
+  "address": "",
+  "lat": 56.647849,
+  "lon": 47.835433,
+  "source": "model",
+  "id": 35,
+  "weight": 32
+ },
+ {
+  "name": "ПВЗ №36",
+  "address": "",
+  "lat": 56.641477,
+  "lon": 47.926614,
+  "source": "model",
+  "id": 36,
+  "weight": 32
+ },
+ {
+  "name": "ПВЗ №37",
+  "address": "",
+  "lat": 56.638667,
+  "lon": 47.886948,
+  "source": "model",
+  "id": 37,
+  "weight": 31
+ },
+ {
+  "name": "ПВЗ №38",
+  "address": "",
+  "lat": 56.633451,
+  "lon": 47.876063,
+  "source": "model",
+  "id": 38,
+  "weight": 31
+ },
+ {
+  "name": "ПВЗ №39",
+  "address": "",
+  "lat": 56.628914,
+  "lon": 47.876006,
+  "source": "model",
+  "id": 39,
+  "weight": 30
+ },
+ {
+  "name": "ПВЗ №40",
+  "address": "",
+  "lat": 56.636167,
+  "lon": 47.819866,
+  "source": "model",
+  "id": 40,
+  "weight": 30
+ },
+ {
+  "name": "ПВЗ №41",
+  "address": "",
+  "lat": 56.625647,
+  "lon": 47.876803,
+  "source": "model",
+  "id": 41,
+  "weight": 29
+ },
+ {
+  "name": "ПВЗ №42",
+  "address": "",
+  "lat": 56.623319,
+  "lon": 47.946598,
+  "source": "model",
+  "id": 42,
+  "weight": 28
+ },
+ {
+  "name": "ПВЗ №43",
+  "address": "",
+  "lat": 56.640969,
+  "lon": 47.878767,
+  "source": "model",
+  "id": 43,
+  "weight": 28
+ },
+ {
+  "name": "ПВЗ №44",
+  "address": "",
+  "lat": 56.645477,
+  "lon": 47.831835,
+  "source": "model",
+  "id": 44,
+  "weight": 26
+ },
+ {
+  "name": "ПВЗ №45",
+  "address": "",
+  "lat": 56.639207,
+  "lon": 47.8247,
+  "source": "model",
+  "id": 45,
+  "weight": 26
+ },
+ {
+  "name": "ПВЗ №46",
+  "address": "",
+  "lat": 56.632465,
+  "lon": 47.889918,
+  "source": "model",
+  "id": 46,
+  "weight": 25
+ },
+ {
+  "name": "ПВЗ №47",
+  "address": "",
+  "lat": 56.63826,
+  "lon": 47.802314,
+  "source": "model",
+  "id": 47,
+  "weight": 25
+ },
+ {
+  "name": "ПВЗ №48",
+  "address": "",
+  "lat": 56.633235,
+  "lon": 47.821087,
+  "source": "model",
+  "id": 48,
+  "weight": 25
+ },
+ {
+  "name": "ПВЗ №49",
+  "address": "",
+  "lat": 56.645863,
+  "lon": 47.854745,
+  "source": "model",
+  "id": 49,
+  "weight": 24
+ },
+ {
+  "name": "ПВЗ №50",
+  "address": "",
+  "lat": 56.641162,
+  "lon": 47.918207,
+  "source": "model",
+  "id": 50,
+  "weight": 22
+ },
+ {
+  "name": "ПВЗ №51",
+  "address": "",
+  "lat": 56.621459,
+  "lon": 47.889228,
+  "source": "model",
+  "id": 51,
+  "weight": 22
+ },
+ {
+  "name": "ПВЗ №52",
+  "address": "",
+  "lat": 56.634032,
+  "lon": 47.883889,
+  "source": "model",
+  "id": 52,
+  "weight": 21
+ },
+ {
+  "name": "ПВЗ №53",
+  "address": "",
+  "lat": 56.634138,
+  "lon": 47.894687,
+  "source": "model",
+  "id": 53,
+  "weight": 21
+ },
+ {
+  "name": "ПВЗ №54",
+  "address": "",
+  "lat": 56.647498,
+  "lon": 47.89767,
+  "source": "model",
+  "id": 54,
+  "weight": 21
+ },
+ {
+  "name": "ПВЗ №55",
+  "address": "",
+  "lat": 56.641034,
+  "lon": 47.820387,
+  "source": "model",
+  "id": 55,
+  "weight": 21
+ },
+ {
+  "name": "ПВЗ №56",
+  "address": "",
+  "lat": 56.640236,
+  "lon": 47.806818,
+  "source": "model",
+  "id": 56,
+  "weight": 20
+ },
+ {
+  "name": "ПВЗ №57",
+  "address": "",
+  "lat": 56.641171,
+  "lon": 47.932446,
+  "source": "model",
+  "id": 57,
+  "weight": 20
+ },
+ {
+  "name": "ПВЗ №58",
+  "address": "",
+  "lat": 56.637468,
+  "lon": 47.811646,
+  "source": "model",
+  "id": 58,
+  "weight": 19
+ },
+ {
+  "name": "ПВЗ №59",
+  "address": "",
+  "lat": 56.650679,
+  "lon": 47.862205,
+  "source": "model",
+  "id": 59,
+  "weight": 18
+ },
+ {
+  "name": "ПВЗ №60",
+  "address": "",
+  "lat": 56.636901,
+  "lon": 47.875189,
+  "source": "model",
+  "id": 60,
+  "weight": 18
+ },
+ {
+  "name": "ПВЗ №61",
+  "address": "",
+  "lat": 56.634674,
+  "lon": 47.814906,
+  "source": "model",
+  "id": 61,
+  "weight": 18
+ },
+ {
+  "name": "ПВЗ №62",
+  "address": "",
+  "lat": 56.642449,
+  "lon": 47.82604,
+  "source": "model",
+  "id": 62,
+  "weight": 18
+ },
+ {
+  "name": "ПВЗ №63",
+  "address": "",
+  "lat": 56.630708,
+  "lon": 47.915139,
+  "source": "model",
+  "id": 63,
+  "weight": 18
+ },
+ {
+  "name": "ПВЗ №64",
+  "address": "",
+  "lat": 56.623233,
+  "lon": 47.940911,
+  "source": "model",
+  "id": 64,
+  "weight": 17
+ },
+ {
+  "name": "ПВЗ №65",
+  "address": "",
+  "lat": 56.630048,
+  "lon": 47.824297,
+  "source": "model",
+  "id": 65,
+  "weight": 17
+ },
+ {
+  "name": "ПВЗ №66",
+  "address": "",
+  "lat": 56.645385,
+  "lon": 47.839217,
+  "source": "model",
+  "id": 66,
+  "weight": 17
+ },
+ {
+  "name": "ПВЗ №67",
+  "address": "",
+  "lat": 56.651248,
+  "lon": 47.966996,
+  "source": "model",
+  "id": 67,
+  "weight": 16
+ },
+ {
+  "name": "ПВЗ №68",
+  "address": "",
+  "lat": 56.651282,
+  "lon": 47.835678,
+  "source": "model",
+  "id": 68,
+  "weight": 16
+ },
+ {
+  "name": "ПВЗ №69",
+  "address": "",
+  "lat": 56.648857,
+  "lon": 47.854492,
+  "source": "model",
+  "id": 69,
+  "weight": 15
+ },
+ {
+  "name": "ПВЗ №70",
+  "address": "",
+  "lat": 56.635793,
+  "lon": 47.798313,
+  "source": "model",
+  "id": 70,
+  "weight": 15
+ },
+ {
+  "name": "ПВЗ №71",
+  "address": "",
+  "lat": 56.633871,
+  "lon": 47.900446,
+  "source": "model",
+  "id": 71,
+  "weight": 15
+ },
+ {
+  "name": "ПВЗ №72",
+  "address": "",
+  "lat": 56.639708,
+  "lon": 47.898765,
+  "source": "model",
+  "id": 72,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №73",
+  "address": "",
+  "lat": 56.637123,
+  "lon": 47.893217,
+  "source": "model",
+  "id": 73,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №74",
+  "address": "",
+  "lat": 56.631363,
+  "lon": 47.844671,
+  "source": "model",
+  "id": 74,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №75",
+  "address": "",
+  "lat": 56.638433,
+  "lon": 47.869877,
+  "source": "model",
+  "id": 75,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №76",
+  "address": "",
+  "lat": 56.635206,
+  "lon": 47.806686,
+  "source": "model",
+  "id": 76,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №77",
+  "address": "",
+  "lat": 56.629636,
+  "lon": 47.92055,
+  "source": "model",
+  "id": 77,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №78",
+  "address": "",
+  "lat": 56.650263,
+  "lon": 47.96122,
+  "source": "model",
+  "id": 78,
+  "weight": 14
+ },
+ {
+  "name": "ПВЗ №79",
+  "address": "",
+  "lat": 56.642169,
+  "lon": 47.902027,
+  "source": "model",
+  "id": 79,
+  "weight": 13
+ },
+ {
+  "name": "ПВЗ №80",
+  "address": "",
+  "lat": 56.643987,
+  "lon": 47.929675,
+  "source": "model",
+  "id": 80,
+  "weight": 13
+ },
+ {
+  "name": "ПВЗ №81",
+  "address": "",
+  "lat": 56.628698,
+  "lon": 47.847217,
+  "source": "model",
+  "id": 81,
+  "weight": 13
+ },
+ {
+  "name": "ПВЗ №82",
+  "address": "",
+  "lat": 56.644251,
+  "lon": 47.848529,
+  "source": "model",
+  "id": 82,
+  "weight": 13
+ },
+ {
+  "name": "ПВЗ №83",
+  "address": "",
+  "lat": 56.633619,
+  "lon": 47.913151,
+  "source": "model",
+  "id": 83,
+  "weight": 13
+ },
+ {
+  "name": "ПВЗ №84",
+  "address": "",
+  "lat": 56.638456,
+  "lon": 47.795229,
+  "source": "model",
+  "id": 84,
+  "weight": 12
+ },
+ {
+  "name": "ПВЗ №85",
+  "address": "",
+  "lat": 56.642711,
+  "lon": 47.802772,
+  "source": "model",
+  "id": 85,
+  "weight": 12
+ },
+ {
+  "name": "ПВЗ №86",
+  "address": "",
+  "lat": 56.652737,
+  "lon": 47.87232,
+  "source": "model",
+  "id": 86,
+  "weight": 12
+ },
+ {
+  "name": "ПВЗ №87",
+  "address": "",
+  "lat": 56.643018,
+  "lon": 47.808895,
+  "source": "model",
+  "id": 87,
+  "weight": 12
+ },
+ {
+  "name": "ПВЗ №88",
+  "address": "",
+  "lat": 56.630724,
+  "lon": 47.943538,
+  "source": "model",
+  "id": 88,
+  "weight": 11
+ },
+ {
+  "name": "ПВЗ №89",
+  "address": "",
+  "lat": 56.634351,
+  "lon": 47.841081,
+  "source": "model",
+  "id": 89,
+  "weight": 11
+ },
+ {
+  "name": "ПВЗ №90",
+  "address": "",
+  "lat": 56.62876,
+  "lon": 47.949689,
+  "source": "model",
+  "id": 90,
+  "weight": 11
+ },
+ {
+  "name": "ПВЗ №91",
+  "address": "",
+  "lat": 56.629585,
+  "lon": 47.908981,
+  "source": "model",
+  "id": 91,
+  "weight": 10
+ },
+ {
+  "name": "ПВЗ №92",
+  "address": "",
+  "lat": 56.653699,
+  "lon": 47.972786,
+  "source": "model",
+  "id": 92,
+  "weight": 10
+ },
+ {
+  "name": "ПВЗ №93",
+  "address": "",
+  "lat": 56.640634,
+  "lon": 47.971439,
+  "source": "model",
+  "id": 93,
+  "weight": 9
+ },
+ {
+  "name": "ПВЗ №94",
+  "address": "",
+  "lat": 56.617368,
+  "lon": 47.882144,
+  "source": "model",
+  "id": 94,
+  "weight": 9
+ },
+ {
+  "name": "ПВЗ №95",
+  "address": "",
+  "lat": 56.620095,
+  "lon": 47.877938,
+  "source": "model",
+  "id": 95,
+  "weight": 9
+ },
+ {
+  "name": "ПВЗ №96",
+  "address": "",
+  "lat": 56.679667,
+  "lon": 47.902697,
+  "source": "model",
+  "id": 96,
+  "weight": 9
+ },
+ {
+  "name": "ПВЗ №97",
+  "address": "",
+  "lat": 56.626513,
+  "lon": 47.921866,
+  "source": "model",
+  "id": 97,
+  "weight": 9
+ },
+ {
+  "name": "ПВЗ №98",
+  "address": "",
+  "lat": 56.635675,
+  "lon": 47.867126,
+  "source": "model",
+  "id": 98,
+  "weight": 8
+ },
+ {
+  "name": "ПВЗ №99",
+  "address": "",
+  "lat": 56.642666,
+  "lon": 47.977337,
+  "source": "model",
+  "id": 99,
+  "weight": 8
+ },
+ {
+  "name": "ПВЗ №100",
+  "address": "",
+  "lat": 56.63217,
+  "lon": 47.950097,
+  "source": "model",
+  "id": 100,
+  "weight": 7
+ },
+ {
+  "name": "ПВЗ №101",
+  "address": "",
+  "lat": 56.628206,
+  "lon": 47.853239,
+  "source": "model",
+  "id": 101,
+  "weight": 7
+ },
+ {
+  "name": "ПВЗ №102",
+  "address": "",
+  "lat": 56.641684,
+  "lon": 47.966029,
+  "source": "model",
+  "id": 102,
+  "weight": 7
+ },
+ {
+  "name": "ПВЗ №103",
+  "address": "",
+  "lat": 56.642362,
+  "lon": 47.84164,
+  "source": "model",
+  "id": 103,
+  "weight": 7
+ },
+ {
+  "name": "ПВЗ №104",
+  "address": "",
+  "lat": 56.641778,
+  "lon": 47.836239,
+  "source": "model",
+  "id": 104,
+  "weight": 7
+ },
+ {
+  "name": "ПВЗ №105",
+  "address": "",
+  "lat": 56.678431,
+  "lon": 47.818132,
+  "source": "model",
+  "id": 105,
+  "weight": 6
+ },
+ {
+  "name": "ПВЗ №106",
+  "address": "",
+  "lat": 56.629929,
+  "lon": 47.814763,
+  "source": "model",
+  "id": 106,
+  "weight": 6
+ },
+ {
+  "name": "ПВЗ №107",
+  "address": "",
+  "lat": 56.644189,
+  "lon": 47.983899,
+  "source": "model",
+  "id": 107,
+  "weight": 6
+ },
+ {
+  "name": "ПВЗ №108",
+  "address": "",
+  "lat": 56.67566,
+  "lon": 47.815373,
+  "source": "model",
+  "id": 108,
+  "weight": 6
+ },
+ {
+  "name": "ПВЗ №109",
+  "address": "",
+  "lat": 56.634162,
+  "lon": 47.848844,
+  "source": "model",
+  "id": 109,
+  "weight": 6
+ },
+ {
+  "name": "ПВЗ №110",
+  "address": "",
+  "lat": 56.624341,
+  "lon": 47.935216,
+  "source": "model",
+  "id": 110,
+  "weight": 6
+ }
+]
