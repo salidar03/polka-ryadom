@@ -1,7 +1,6 @@
 """База данных: PostgreSQL в Docker, SQLite для быстрого локального запуска."""
 import json
 import os
-import random
 from datetime import datetime
 from pathlib import Path
 
@@ -85,11 +84,27 @@ class Courier(Base):
     busy: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class Run(Base):
+    """Рейс машины: в определённое время объезжает ПВЗ в пересекающихся кругах, забирает упакованные заказы и развозит их."""
+    __tablename__ = "runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    courier_id: Mapped[int] = mapped_column(ForeignKey("couriers.id"), index=True)
+    status: Mapped[str] = mapped_column(String(10))            # active — в пути | done — завершён
+    slot: Mapped[str] = mapped_column(String(10))              # «13:00» или «сейчас»
+    stops_json: Mapped[str] = mapped_column(Text)              # [{pvz_id, pickups: [id], drops: [id]}] по порядку
+    route_json: Mapped[str] = mapped_column(Text, default="")  # путь по улицам через все остановки
+    km: Mapped[float] = mapped_column(Float, default=0)
+    pay: Mapped[int] = mapped_column(Integer, default=0)
+    orders_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class Account(Base):
-    """Учётная запись: покупатель, ПВЗ или курьер."""
+    """Учётная запись: покупатель, ПВЗ, водитель (курьер) или поставщик."""
     __tablename__ = "accounts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    role: Mapped[str] = mapped_column(String(10))          # buyer | pvz | courier
+    role: Mapped[str] = mapped_column(String(10))          # buyer | pvz | courier | supplier
     login: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     pass_hash: Mapped[str] = mapped_column(String(128))
@@ -122,6 +137,9 @@ class Order(Base):
     discount: Mapped[int] = mapped_column(Integer, default=0)
     courier_id: Mapped[int | None] = mapped_column(ForeignKey("couriers.id"), nullable=True)
     courier_pay: Mapped[int] = mapped_column(Integer, default=0)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # рейс, который везёт заказ
+    ready_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)      # ПВЗ упаковал — ждёт рейса
+    picked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)     # водитель взял с точки
     distance_m: Mapped[int] = mapped_column(Integer, default=0)   # по прямой между ПВЗ
     road_m: Mapped[int] = mapped_column(Integer, default=0)       # по дорогам: подъезд + доставка
     route_json: Mapped[str] = mapped_column(Text, default="")     # маршрут курьера по улицам
@@ -153,23 +171,9 @@ DEMO_PASSWORD = "1234"
 DEMO_BUYERS = [("ivan", "Иван"), ("maria", "Мария")]
 
 
-def _seed_stock(s: Session) -> None:
-    """Ходовой товар на полках опорных ПВЗ (центров районов) и немного — в обычных."""
-    from .geo import build_zones
-
-    rng = random.Random(7)
-    pvz = [{"id": p.id, "lat": p.lat, "lon": p.lon, "weight": p.weight}
-           for p in s.scalars(select(Pvz).where(Pvz.source != "registered").order_by(Pvz.id))]
-    centers = {z["center_id"] for z in build_zones(pvz, 700)}
-    for p in pvz:
-        chance = 0.65 if p["id"] in centers else 0.08
-        for prod_id in range(1, len(PRODUCTS) + 1):
-            if rng.random() < chance:
-                s.add(Stock(pvz_id=p["id"], product_id=prod_id, qty=rng.randint(2, 8)))
-
-
 def _seed_base(s: Session) -> None:
-    """Товары и демо-аккаунты покупателей и ПВЗ (пароль у всех 1234). Курьеров нет — их регистрируют сами."""
+    """Товары и демо-аккаунты покупателей и ПВЗ (пароль у всех 1234). Курьеров нет — их регистрируют сами.
+    Полки пустые: товар в ПВЗ привозят поставщики (или ПВЗ добавляет сам)."""
     from .auth import hash_password
 
     for i, (name, price, emoji, cat) in enumerate(PRODUCTS, start=1):
@@ -180,7 +184,6 @@ def _seed_base(s: Session) -> None:
     for login, name in DEMO_BUYERS:
         s.add(Account(role="buyer", login=login, name=name, pass_hash=h, salt=salt))
     s.flush()
-    _seed_stock(s)
 
 
 def _ensure_columns() -> None:
@@ -188,17 +191,22 @@ def _ensure_columns() -> None:
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
-    if "products" not in insp.get_table_names():
-        return
-    have = {c["name"] for c in insp.get_columns("products")}
-    adds = {"category": "VARCHAR(40) DEFAULT 'other'", "supplier_account_id": "INTEGER", "supplier_name": "VARCHAR(100)"}
+    tables = insp.get_table_names()
+    adds = {
+        "products": {"category": "VARCHAR(40) DEFAULT 'other'", "supplier_account_id": "INTEGER", "supplier_name": "VARCHAR(100)"},
+        "orders": {"run_id": "INTEGER", "ready_at": "TIMESTAMP", "picked_at": "TIMESTAMP"},
+    }
     with engine.begin() as conn:
-        for col, ddl in adds.items():
-            if col not in have:
-                conn.execute(text(f"ALTER TABLE products ADD COLUMN {col} {ddl}"))
-        if "category" not in have:  # проставить категории товарам, которые уже были в базе
-            for i, (_, _, _, cat) in enumerate(PRODUCTS, start=1):
-                conn.execute(text("UPDATE products SET category = :c WHERE id = :i"), {"c": cat, "i": i})
+        for table, cols in adds.items():
+            if table not in tables:
+                continue
+            have = {c["name"] for c in insp.get_columns(table)}
+            for col, ddl in cols.items():
+                if col not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+            if table == "products" and "category" not in have:  # проставить категории товарам, которые уже были в базе
+                for i, (_, _, _, cat) in enumerate(PRODUCTS, start=1):
+                    conn.execute(text("UPDATE products SET category = :c WHERE id = :i"), {"c": cat, "i": i})
 
 
 def init_db() -> None:
@@ -214,6 +222,22 @@ def init_db() -> None:
             _seed_base(s)
             s.commit()
         _remove_old_demo_couriers(s)
+        _migrate_to_runs(s)
+
+
+def _migrate_to_runs(s: Session) -> None:
+    """Версия 1.0 возила каждый заказ отдельным курьером. Теперь — рейсами: собранные заказы,
+    у которых ещё нет рейса, становятся «упакован, ждёт рейса», курьеры без рейса — свободны."""
+    old = list(s.scalars(select(Order).where(Order.run_id.is_(None),
+                                             Order.status.in_(("awaiting_courier", "courier_assigned", "in_transit")))))
+    for o in old:
+        o.status, o.courier_id, o.courier_pay, o.route_json, o.road_m = "awaiting_run", None, 0, "", 0
+        o.ready_at = o.ready_at or datetime.now()
+    in_run = set(s.scalars(select(Run.courier_id).where(Run.status == "active")))
+    for c in s.scalars(select(Courier).where(Courier.busy.is_(True))):
+        if c.id not in in_run:
+            c.busy = False
+    s.commit()
 
 
 def _remove_old_demo_couriers(s: Session) -> None:
@@ -225,9 +249,11 @@ def _remove_old_demo_couriers(s: Session) -> None:
         return
     ids = [a.courier_id for a in demo]
     for o in s.scalars(select(Order).where(Order.courier_id.in_(ids))):
-        if o.status in ("courier_assigned", "in_transit"):
-            o.status, o.route_json, o.road_m, o.courier_pay = "awaiting_courier", "", 0, 0
+        if o.status in ("courier_assigned", "in_transit", "in_run"):
+            o.status, o.route_json, o.road_m, o.courier_pay, o.run_id = "awaiting_run", "", 0, 0, None
+            o.ready_at = o.ready_at or datetime.now()
         o.courier_id = None
+    s.execute(delete(Run).where(Run.courier_id.in_(ids)))
     s.execute(delete(Notification).where(Notification.target == "courier", Notification.target_id.in_(ids)))
     s.execute(delete(AuthToken).where(AuthToken.account_id.in_([a.id for a in demo])))
     for a in demo:
@@ -235,22 +261,19 @@ def _remove_old_demo_couriers(s: Session) -> None:
     s.flush()
     s.execute(delete(Courier).where(Courier.id.in_(ids)))
     s.commit()
-    from .service import dispatch_waiting  # заказы из очереди — оставшимся свободным курьерам
-    dispatch_waiting(s)
-    s.commit()
 
 
 def reset_demo() -> None:
-    """Сбросить демо: заказы и уведомления удаляются, полки и курьеры — как в начале.
-    Учётные записи и зарегистрированные ПВЗ остаются."""
+    """Сбросить демо: заказы, рейсы, поставки и уведомления удаляются, полки пустеют,
+    водители возвращаются туда, где начинали смену. Учётные записи и ПВЗ остаются."""
     with Session(engine) as s:
         s.execute(delete(Notification))
         s.execute(delete(Order))
+        s.execute(delete(Run))
         s.execute(delete(Supply))
         s.execute(delete(Stock))  # товары поставщиков остаются в каталоге, их поставки и полки — заново
         for c in s.scalars(select(Courier)):
             c.lat, c.lon, c.busy = c.home_lat, c.home_lon, False
-        _seed_stock(s)
         s.commit()
 
 

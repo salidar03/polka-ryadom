@@ -1,14 +1,27 @@
 import { useState } from 'react';
-import { CircleMarker, Polyline, Tooltip, useMapEvents } from 'react-leaflet';
-import { fetchCourierDashboard, fetchCouriers, markDelivered, markPicked, setCourierLocation } from './api.js';
-import { CityMap, FlyTo, Notes, StatusChip, fmt, km, locateMe, usePoll } from './common.jsx';
+import L from 'leaflet';
+import { Circle, CircleMarker, Marker, Polyline, Tooltip, useMapEvents } from 'react-leaflet';
+import { fetchCourierDashboard, fetchCouriers, markPicked, markUnloaded, setCourierLocation, startRun } from './api.js';
+import { CityMap, FlyTo, Notes, fmt, km, locateMe, plural, usePoll } from './common.jsx';
+
+const nf1 = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 
 function ClickToPlace({ onPick }) {
   useMapEvents({ click: (e) => onPick([e.latlng.lat, e.latlng.lng]) });
   return null;
 }
 
-/** Курьер после входа: задание «забрать в ПВЗ А — доставить в ПВЗ Б», маршрут по улицам и заработок. */
+/** Номер остановки на карте: оранжевый — забрать, зелёный — только выгрузить, серый — пройдена. */
+function stopIcon(n, kind) {
+  return L.divIcon({ className: '', html: `<span class="stop-pin ${kind}">${n}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] });
+}
+
+function stopKind(st) {
+  if (st.done) return 'done';
+  return st.pickups.some((x) => x.status === 'in_run') ? 'pick' : 'drop';
+}
+
+/** Водитель: рейсы по расписанию, объезд ПВЗ в пересекающихся кругах, «Заказ взят с точки», заработок за рейсы. */
 export default function CourierView({ user }) {
   const [couriers, setCouriers] = useState([]);
   const [dash, setDash] = useState(null);
@@ -17,6 +30,10 @@ export default function CourierView({ user }) {
   const [picking, setPicking] = useState(false); // ждём щелчка по карте «я здесь»
   const [located, setLocated] = useState(null);  // время последней отметки
 
+  const act = async (fn) => {
+    setBusy(true);
+    try { await fn(); setDash(await fetchCourierDashboard()); setCouriers(await fetchCouriers()); setError(''); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
   const saveLocation = async ([lat, lon]) => {
     setPicking(false);
     await act(() => setCourierLocation(lat, lon));
@@ -31,25 +48,21 @@ export default function CourierView({ user }) {
     fetchCourierDashboard().then((d) => { setDash(d); setError(''); }).catch((e) => setError(e.message));
   }, []);
 
-  const act = async (fn) => {
-    setBusy(true);
-    try { await fn(); setDash(await fetchCourierDashboard()); setCouriers(await fetchCouriers()); setError(''); } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-
   const me = dash?.courier;
-  const task = dash?.tasks?.[0];
-  const route = task?.route;
+  const run = dash?.run;
+  const ready = dash?.ready || [];
   const earn = dash?.earnings;
-  const fly = route ? [...route.approach.path, ...route.delivery.path] : me ? [[me.lat, me.lon]] : [];
+  const limits = dash?.limits;
   const meId = user.courier?.id;
+  const fly = run ? run.route.path : ready.length ? [...ready.map((o) => [o.from.lat, o.from.lon]), ...(me ? [[me.lat, me.lon]] : [])] : me ? [[me.lat, me.lon]] : [];
 
   return (
     <div className="app">
       <aside className="panel">
         <header className="brand">
-          <p className="eyebrow">Доставка</p>
+          <p className="eyebrow">Доставка рейсами</p>
           <h1>{user.name}</h1>
-          {me && <span className={`chip ${me.busy ? 'work' : 'good'}`}>{me.busy ? 'выполняет заказ' : 'свободен — ждёт задание'}</span>}
+          {me && <span className={`chip ${me.busy ? 'work' : 'good'}`}>{run ? `в рейсе №${run.id}` : 'свободен — ждёт рейса'}</span>}
         </header>
         {error && <p className="error" role="alert">{error}</p>}
 
@@ -66,33 +79,89 @@ export default function CourierView({ user }) {
             </button>
             <button type="button" className="secondary" disabled={busy} onClick={autoLocate}>Определить автоматически</button>
           </div>
-          <p className="muted small">От вашей точки система выбирает ближайшего курьера и строит путь до ПВЗ.</p>
+          <p className="muted small">Рейс начинается с точки, ближайшей к вам, — отметьте, где стоит машина.</p>
         </section>
 
-        <section className="block">
-          <h2>Задание</h2>
-          {!task && <p className="muted small">Заданий нет. Как только ПВЗ подтвердит сбор заказа, система выберет ближайшего свободного курьера — если это вы, задание появится здесь. Не забудьте отметить, где вы сейчас.</p>}
-          {dash?.tasks.map((o) => (
-            <div key={o.id} className="card task alert">
-              <p><b>Заберите товар из «{o.source.name}» и доставьте в «{o.dest.name}»</b></p>
-              <p className="muted small">Заказ №{o.id} · {o.product.emoji} {o.product.name} · оплата <b>{fmt(o.courier_pay)} ₽</b></p>
-              <StatusChip status={o.status} label={o.status_label} />
-              <ol className="steps">
-                <li className={o.status === 'courier_assigned' ? 'now' : 'done'}>
-                  Забрать в «{o.source.name}»{o.source.address ? `, ${o.source.address}` : ''}
-                  {o.route && ` — ${km(o.route.approach.distance_m)}, ~${Math.max(1, Math.round(o.route.approach.duration_s / 60))} мин`}
-                </li>
-                <li className={o.status === 'in_transit' ? 'now' : ''}>
-                  Доставить в «{o.dest.name}»{o.dest.address ? `, ${o.dest.address}` : ''}
-                  {o.route && ` — ${km(o.route.delivery.distance_m)}, ~${Math.max(1, Math.round(o.route.delivery.duration_s / 60))} мин`}
-                </li>
-              </ol>
-              {o.route && <p className="muted small">{o.route.delivery.source === 'osrm' ? 'Маршрут построен по улицам (OpenStreetMap).' : 'Сервис маршрутов не ответил — показан путь по прямой.'}</p>}
-              {o.status === 'courier_assigned' && <button type="button" className="primary" disabled={busy} onClick={() => act(() => markPicked(o.id))}>Забрал заказ</button>}
-              {o.status === 'in_transit' && <button type="button" className="primary" disabled={busy} onClick={() => act(() => markDelivered(o.id))}>Доставил в ПВЗ</button>}
+        {!run && dash && (
+          <section className="block">
+            <h2>Следующий рейс — в {dash.next_run}</h2>
+            <p className="muted small">
+              Расписание: {dash.schedule}. Машина объезжает ПВЗ, круги которых по 700 м пересекаются
+              (соседние точки не дальше {nf1.format(limits.link_m / 1000)} км), — до {limits.stops} ПВЗ и {limits.orders} заказов за рейс.
+              Маршрут строится по тем ПВЗ, где заказы уже упакованы.
+            </p>
+            <div className="card">
+              <div className="row-between">
+                <b>Упаковано и ждёт рейса</b>
+                <span className="badge">{ready.length}</span>
+              </div>
+              {ready.length === 0 && <p className="muted small">Пока ничего: заказ появится здесь, когда ПВЗ подтвердит сбор и упаковку.</p>}
+              {ready.length > 0 && (
+                <ul className="list">
+                  {ready.slice(0, 8).map((o) => (
+                    <li key={o.id}>
+                      <div><b>№{o.id} · {o.product}</b><br /><span className="muted small">«{o.from.name}» → «{o.to.name}» · упакован в {o.ready_at}</span></div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button type="button" className="primary" disabled={busy || ready.length === 0} onClick={() => act(startRun)}>
+                Выехать в рейс сейчас
+              </button>
+              <p className="muted small">Для показа: не ждать {dash.next_run} — собрать рейс из готовых заказов прямо сейчас.</p>
             </div>
-          ))}
-        </section>
+          </section>
+        )}
+
+        {run && (
+          <section className="block">
+            <h2>Рейс №{run.id} · {run.slot === 'сейчас' ? 'внеплановый' : `в ${run.slot}`}</h2>
+            <div className="stats-row">
+              <span><b>{run.stops.length}</b> {plural(run.stops.length, 'остановка', 'остановки', 'остановок')}</span>
+              <span><b>{run.orders}</b> {plural(run.orders, 'заказ', 'заказа', 'заказов')}</span>
+              <span><b>{nf1.format(run.km)}</b> км</span>
+              <span><b>{fmt(run.pay)} ₽</b> за рейс</span>
+            </div>
+            <p className="muted small">
+              {run.route.source === 'osrm' ? 'Маршрут построен по улицам (OpenStreetMap).' : 'Сервис маршрутов не ответил — показан путь по прямой.'}
+              {' '}Логистика на заказ — {fmt(run.cost_per_order)} ₽.
+            </p>
+            <ol className="run-stops">
+              {run.stops.map((st) => {
+                const kind = stopKind(st);
+                const canUnload = st.drops.length > 0 && st.drops.some((x) => x.status === 'in_transit');
+                const waiting = st.drops.filter((x) => x.status === 'in_run');
+                return (
+                  <li key={st.index} className={`run-stop ${kind}${run.current === st.index ? ' now' : ''}`}>
+                    <span className={`stop-pin ${kind}`}>{st.index + 1}</span>
+                    <div className="run-stop-body">
+                      <b>{st.pvz.name}</b>
+                      {st.pvz.address && <span className="muted small">{st.pvz.address}</span>}
+                      {st.pickups.map((x) => (
+                        <div key={x.id} className="run-order">
+                          <span>Забрать №{x.id} · {x.product}</span>
+                          {x.status === 'in_run'
+                            ? <button type="button" className="primary small-btn" disabled={busy} onClick={() => act(() => markPicked(x.id))}>Заказ взят с точки</button>
+                            : <span className="chip good">взят</span>}
+                        </div>
+                      ))}
+                      {st.drops.length > 0 && (
+                        <div className="run-order">
+                          <span>Выгрузить: {st.drops.map((x) => `№${x.id}`).join(', ')}</span>
+                          {st.drops.every((x) => x.status === 'delivered' || x.status === 'issued')
+                            ? <span className="chip good">выгружено</span>
+                            : <button type="button" className="secondary small-btn" disabled={busy || !canUnload || waiting.length > 0}
+                                title={waiting.length ? `Сначала возьмите с точки №${waiting[0].id}` : ''}
+                                onClick={() => act(() => markUnloaded(run.id, st.index))}>Выгрузил заказы</button>}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
 
         {earn && (
           <section className="block">
@@ -103,13 +172,17 @@ export default function CourierView({ user }) {
                 <p className="kpi-v accent">{fmt(earn.today)} ₽</p>
                 <p className="kpi-n">{earn.rate}</p>
               </div>
-              <div className="kpi"><p className="kpi-k">Доставок</p><p className="kpi-v">{earn.deliveries}</p></div>
-              <div className="kpi"><p className="kpi-k">Проехал</p><p className="kpi-v">{new Intl.NumberFormat('ru-RU').format(earn.km)} км</p></div>
+              <div className="kpi"><p className="kpi-k">Рейсов</p><p className="kpi-v">{earn.runs}</p></div>
+              <div className="kpi"><p className="kpi-k">Заказов развёз</p><p className="kpi-v">{earn.orders}</p></div>
+              <div className="kpi wide"><p className="kpi-k">Проехал</p><p className="kpi-v">{nf1.format(earn.km)} км</p></div>
             </div>
             {earn.items.length > 0 && (
               <ul className="list">
                 {earn.items.map((x) => (
-                  <li key={x.id}><div><b>№{x.id} · {x.product}</b><br /><span className="muted small">{x.time} · «{x.from}» → «{x.to}» · {new Intl.NumberFormat('ru-RU').format(x.km)} км</span></div><b>+{fmt(x.pay)} ₽</b></li>
+                  <li key={x.id}>
+                    <div><b>Рейс №{x.id} · {x.slot === 'сейчас' ? 'внеплановый' : x.slot}</b><br /><span className="muted small">завершён в {x.time} · {x.stops} {plural(x.stops, 'остановка', 'остановки', 'остановок')} · {x.orders} {plural(x.orders, 'заказ', 'заказа', 'заказов')} · {nf1.format(x.km)} км</span></div>
+                    <b>+{fmt(x.pay)} ₽</b>
+                  </li>
                 ))}
               </ul>
             )}
@@ -125,30 +198,46 @@ export default function CourierView({ user }) {
       <CityMap className={picking ? 'map picking' : 'map'}>
         {picking && <ClickToPlace onPick={saveLocation} />}
         <FlyTo points={fly} />
+
+        {/* без рейса: где упакованы заказы и куда их везти */}
+        {!run && ready.map((o) => (
+          <Polyline key={`r${o.id}`} positions={[[o.from.lat, o.from.lon], [o.to.lat, o.to.lon]]} pathOptions={{ color: '#E8742A', weight: 2, dashArray: '4 6', opacity: 0.8 }} />
+        ))}
+        {!run && ready.map((o) => (
+          <Circle key={`c${o.id}`} center={[o.from.lat, o.from.lon]} radius={700} pathOptions={{ color: '#E8742A', weight: 1, fillOpacity: 0.06 }} />
+        ))}
+        {!run && ready.map((o) => (
+          <CircleMarker key={`f${o.id}`} center={[o.from.lat, o.from.lon]} radius={7} pathOptions={{ color: '#E8742A', weight: 3, fillColor: '#FFFFFF', fillOpacity: 1 }}>
+            <Tooltip direction="top">Упакован №{o.id}: «{o.from.name}»</Tooltip>
+          </CircleMarker>
+        ))}
+
+        {/* рейс: круги 700 м вокруг остановок, путь по улицам и номера остановок */}
+        {run && run.stops.map((st) => (
+          <Circle key={`z${st.index}`} center={[st.pvz.lat, st.pvz.lon]} radius={700}
+            pathOptions={{ color: '#7B2D8E', weight: 1, fillColor: '#7B2D8E', fillOpacity: 0.05 }} />
+        ))}
+        {run && (
+          <Polyline positions={run.route.path} pathOptions={{ color: '#E8742A', weight: 5 }}>
+            <Tooltip sticky>Рейс №{run.id}: {nf1.format(run.km)} км</Tooltip>
+          </Polyline>
+        )}
+        {run && run.stops.map((st) => (
+          <Marker key={`s${st.index}`} position={[st.pvz.lat, st.pvz.lon]} icon={stopIcon(st.index + 1, stopKind(st))}>
+            <Tooltip direction="top" offset={[0, -12]}>
+              {st.index + 1}. {st.pvz.name}
+              {st.pickups.length > 0 && ` · забрать ${st.pickups.length}`}
+              {st.drops.length > 0 && ` · выгрузить ${st.drops.length}`}
+            </Tooltip>
+          </Marker>
+        ))}
+
         {couriers.map((c) => (
           <CircleMarker key={c.id} center={[c.lat, c.lon]} radius={c.id === meId ? 10 : 6}
             pathOptions={{ color: '#14213D', weight: c.id === meId ? 4 : 2, fillColor: c.busy ? '#E8742A' : '#3B6FD8', fillOpacity: 1 }}>
-            <Tooltip permanent={c.id === meId} direction="top">{c.id === meId ? 'Я здесь' : `${c.name} — ${c.busy ? 'выполняет заказ' : 'свободен'}`}</Tooltip>
+            <Tooltip permanent={c.id === meId} direction="bottom">{c.id === meId ? 'Я здесь' : `${c.name} — ${c.busy ? 'в рейсе' : 'свободен'}`}</Tooltip>
           </CircleMarker>
         ))}
-        {task && route && (
-          <>
-            {task.status === 'courier_assigned' && (
-              <Polyline positions={route.approach.path} pathOptions={{ color: '#3B6FD8', weight: 4, dashArray: '6 8' }}>
-                <Tooltip sticky>К ПВЗ за заказом</Tooltip>
-              </Polyline>
-            )}
-            <Polyline positions={route.delivery.path} pathOptions={{ color: '#E8742A', weight: 5 }}>
-              <Tooltip sticky>Доставка в ПВЗ покупателя</Tooltip>
-            </Polyline>
-            <CircleMarker center={[task.source.lat, task.source.lon]} radius={9} pathOptions={{ color: '#E8742A', weight: 3, fillColor: '#FFFFFF', fillOpacity: 1 }}>
-              <Tooltip permanent direction="top">Забрать: {task.source.name}</Tooltip>
-            </CircleMarker>
-            <CircleMarker center={[task.dest.lat, task.dest.lon]} radius={9} pathOptions={{ color: '#2F7A4D', weight: 3, fillColor: '#FFFFFF', fillOpacity: 1 }}>
-              <Tooltip permanent direction="top">Доставить: {task.dest.name}</Tooltip>
-            </CircleMarker>
-          </>
-        )}
       </CityMap>
     </div>
   );

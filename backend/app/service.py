@@ -1,4 +1,4 @@
-"""Живой процесс: покупатель → ПВЗ с товаром → курьер → ПВЗ покупателя."""
+"""Живой процесс: покупатель → ПВЗ с товаром упаковывает → рейс машины → ПВЗ покупателя."""
 import json
 import random
 from datetime import datetime
@@ -7,29 +7,29 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .db import Account, Courier, Notification, Order, Product, Pvz, Stock
+from . import runs
+from .db import Account, Courier, Notification, Order, Product, Pvz, Run, Stock
+from .economics import Params
 from .geo import ROAD_FACTOR, dist_m
-from .routing import road_route
+from .similar import similar_products
 from .supplier import incoming_for_pvz
 
 WALK_KMH = 4.5
-COURIER_BASE_PAY = 60      # ₽ за доставку: подъезд, погрузка, сдача в ПВЗ
-COURIER_PAY_PER_KM = 20    # ₽ за километр от ПВЗ с товаром до ПВЗ покупателя
 
 STATUS_LABEL = {
     "via_hub": "Едет через хаб — 2 дня",
     "ready": "Отложен в ПВЗ — можно забирать",
-    "assembling": "ПВЗ собирает заказ",
-    "awaiting_courier": "Собран, ищем курьера",
-    "courier_assigned": "Курьер едет в ПВЗ за заказом",
-    "in_transit": "В пути в ПВЗ покупателя",
+    "assembling": "ПВЗ собирает и упаковывает заказ",
+    "awaiting_run": "Упакован — ждёт рейса",
+    "in_run": "В рейсе — машина едет за заказом",
+    "in_transit": "Взят с точки — едет в ПВЗ покупателя",
     "delivered": "Доставлен — можно забирать",
     "issued": "Выдан",
 }
 
 
 def pickup_discount(price: int) -> int:
-    """Скидка за самовывоз из ПВЗ, где товар уже лежит: курьер и рейс не нужны.
+    """Скидка за самовывоз из ПВЗ, где товар уже лежит: рейс не нужен.
     Часть сэкономленной логистики: 7% цены, но не меньше 20 ₽ и не больше 60 ₽."""
     return int(min(60, max(20, round(price * 0.07 / 10) * 10)))
 
@@ -82,24 +82,47 @@ def products(s: Session) -> list[dict]:
     return [{**product_brief(p), "in_city": int(totals.get(p.id, 0) or 0)} for p in s.scalars(select(Product).order_by(Product.id))]
 
 
-def offers(s: Session, product_id: int, pvz_id: int) -> dict:
-    """Где взять товар: в выбранном ПВЗ, в ближайшем (дешевле, забрать сразу), в других — или через хаб."""
-    me = _get(s, Pvz, pvz_id, "ПВЗ")
-    prod = _get(s, Product, product_id, "товар")
+def _shelves(s: Session, product_id: int, me: Pvz) -> list[dict]:
+    """ПВЗ, где товар лежит на полке, — от ближайшего к ПВЗ покупателя."""
     rows = s.execute(select(Stock, Pvz).join(Pvz, Stock.pvz_id == Pvz.id)
                      .where(Stock.product_id == product_id, Stock.qty > 0)).all()
-    options = []
+    out = []
     for st, p in rows:
         d = dist_m(_pt(me), _pt(p))
-        options.append({**pvz_brief(p), "qty": st.qty, "distance_m": round(d), "walk_min": _walk_min(d)})
-    options.sort(key=lambda o: o["distance_m"])
+        out.append({**pvz_brief(p), "qty": st.qty, "distance_m": round(d), "walk_min": _walk_min(d)})
+    return sorted(out, key=lambda o: o["distance_m"])
+
+
+def alternatives(s: Session, prod: Product, me: Pvz) -> list[dict]:
+    """Такой же товар у других продавцов, который уже лежит на полке: можно забрать сразу."""
+    out = []
+    for other in similar_products(s, prod):
+        shelves = _shelves(s, other.id, me)
+        if not shelves:
+            continue
+        best, disc = shelves[0], pickup_discount(other.price)
+        out.append({"product": product_brief(other), "pvz": best, "shelves": len(shelves),
+                    "price": other.price, "pickup_price": other.price - disc, "discount": disc,
+                    "here": best["id"] == me.id})
+    return sorted(out, key=lambda a: (a["pvz"]["distance_m"], a["pickup_price"]))[:3]
+
+
+def offers(s: Session, product_id: int, pvz_id: int) -> dict:
+    """Где взять товар: в выбранном ПВЗ, в ближайшем (дешевле, забрать сразу), в других — или через хаб.
+    Плюс такой же товар у других продавцов, если он лежит на полках рядом."""
+    me = _get(s, Pvz, pvz_id, "ПВЗ")
+    prod = _get(s, Product, product_id, "товар")
+    options = _shelves(s, product_id, me)
     here = next((o for o in options if o["id"] == pvz_id), None)
     disc = pickup_discount(prod.price)
+    slot = runs.next_slot()
     return {
         "product": product_brief(prod), "my_pvz": pvz_brief(me),
         "here": here, "nearest": here or (options[0] if options else None), "options": options,
         "price": prod.price, "pickup_price": prod.price - disc, "discount": disc,
         "deliver_days": 1, "hub_days": 2,
+        "next_run": slot.strftime("%H:%M"), "schedule": runs.schedule_text(),
+        "alternatives": alternatives(s, prod, me),
     }
 
 
@@ -131,7 +154,7 @@ def create_order(s: Session, buyer: Account, product_id: int, buyer_pvz_id: int,
                   distance_m=round(dist_m(_pt(buyer_pvz), _pt(src))))
         s.add(o)
         s.flush()
-        _log(o, f"Самовывоз из «{src.name}» со скидкой {disc} ₽ — курьер не нужен. Код {code}")
+        _log(o, f"Самовывоз из «{src.name}» со скидкой {disc} ₽ — рейс не нужен. Код {code}")
         _notify(s, "pvz", src.id, o.id, f"Заказ №{o.id}: отложите «{prod.name}» — {buyer.name} заберёт сам. Код выдачи {code}")
         s.commit()
         return order_view(s, o)
@@ -143,14 +166,15 @@ def create_order(s: Session, buyer: Account, product_id: int, buyer_pvz_id: int,
     s.add(o)
     s.flush()
     _log(o, f"Заказ создан: «{prod.name}» с полки «{src.name}» в «{buyer_pvz.name}» ({_km(d)})")
-    _notify(s, "pvz", src.id, o.id, f"Новый заказ №{o.id}: соберите «{prod.name}» для доставки в «{buyer_pvz.name}» ({_km(d)})")
+    _notify(s, "pvz", src.id, o.id, f"Новый заказ №{o.id}: соберите и упакуйте «{prod.name}» для доставки в «{buyer_pvz.name}» ({_km(d)})")
     s.commit()
     return order_view(s, o)
 
 
 def my_orders(s: Session, buyer: Account) -> list[dict]:
+    runs.auto_form(s)
     rows = s.scalars(select(Order).where(Order.buyer_account_id == buyer.id).order_by(Order.id.desc()).limit(30))
-    return [order_view(s, o, with_route=False) for o in rows]
+    return [order_view(s, o) for o in rows]
 
 
 # ---------- ПВЗ ----------
@@ -197,47 +221,19 @@ def remove_stock(s: Session, pvz_id: int, product_id: int, qty: int | None) -> d
 
 
 def confirm_assembled(s: Session, pvz_id: int, order_id: int) -> dict:
-    """ПВЗ подтвердил сбор заказа → система выбирает ближайшего свободного курьера."""
+    """ПВЗ подтвердил сбор и упаковку → заказ ждёт ближайшего рейса машины."""
     o = _get(s, Order, order_id, "заказ")
     if o.source_pvz_id != pvz_id:
         raise HTTPException(403, "Этот заказ собирает другой ПВЗ")
     if o.status != "assembling":
-        raise HTTPException(409, f"Заказ №{o.id} уже не на сборке: {STATUS_LABEL[o.status]}")
-    o.status = "awaiting_courier"
-    _log(o, "ПВЗ подтвердил сбор заказа")
-    assign_courier(s, o)
+        raise HTTPException(409, f"Заказ №{o.id} уже не на сборке: {STATUS_LABEL.get(o.status, o.status)}")
+    slot = runs.next_slot()
+    o.status, o.ready_at = "awaiting_run", datetime.now()
+    _log(o, f"ПВЗ собрал и упаковал заказ — уедет ближайшим рейсом в {slot:%H:%M}")
+    for c in s.scalars(select(Courier).where(Courier.busy.is_(False))):
+        _notify(s, "courier", c.id, o.id, f"Заказ №{o.id} упакован в «{s.get(Pvz, pvz_id).name}» — ждёт рейса в {slot:%H:%M}")
     s.commit()
     return order_view(s, o)
-
-
-def dispatch_waiting(s: Session) -> None:
-    """Раздать заказы из очереди (собраны, но курьера не было) свободным курьерам — старые первыми."""
-    for o in list(s.scalars(select(Order).where(Order.status == "awaiting_courier").order_by(Order.created_at))):
-        if not s.scalars(select(Courier).where(Courier.busy.is_(False))).first():
-            break
-        assign_courier(s, o)
-
-
-def assign_courier(s: Session, o: Order) -> None:
-    """Ближайший свободный курьер к ПВЗ с заказом; маршрут по улицам: курьер → ПВЗ А → ПВЗ Б."""
-    src, dest = s.get(Pvz, o.source_pvz_id), s.get(Pvz, o.dest_pvz_id)
-    free = list(s.scalars(select(Courier).where(Courier.busy.is_(False))))
-    if not free:
-        _log(o, "Свободных курьеров нет — заказ ждёт в очереди")
-        _notify(s, "pvz", src.id, o.id, f"Заказ №{o.id} собран. Свободных курьеров нет — назначим первого, кто появится")
-        return
-    c = min(free, key=lambda c: dist_m(_pt(c), _pt(src)))
-    approach = road_route([_pt(c), _pt(src)])
-    delivery = road_route([_pt(src), _pt(dest)])
-    o.courier_id, o.status, c.busy = c.id, "courier_assigned", True
-    o.road_m = approach["distance_m"] + delivery["distance_m"]
-    o.courier_pay = round(COURIER_BASE_PAY + COURIER_PAY_PER_KM * delivery["distance_m"] / 1000)
-    o.route_json = json.dumps({"approach": approach, "delivery": delivery})
-    mins = max(1, round(approach["duration_s"] / 60))
-    _log(o, f"Назначен ближайший курьер {c.name}: {_km(approach['distance_m'])} по дорогам до ПВЗ, ~{mins} мин")
-    _notify(s, "courier", c.id, o.id,
-            f"Заказ №{o.id}: заберите в «{src.name}» и доставьте в «{dest.name}» — {_km(delivery['distance_m'])} по дорогам, оплата {o.courier_pay} ₽")
-    _notify(s, "pvz", src.id, o.id, f"За заказом №{o.id} едет курьер {c.name}, ~{mins} мин")
 
 
 def issue_order(s: Session, pvz_id: int, order_id: int, code: str) -> dict:
@@ -245,7 +241,7 @@ def issue_order(s: Session, pvz_id: int, order_id: int, code: str) -> dict:
     if o.dest_pvz_id != pvz_id:
         raise HTTPException(403, "Этот заказ выдаёт другой ПВЗ")
     if o.status not in ("ready", "delivered"):
-        raise HTTPException(409, f"Заказ №{o.id}: {STATUS_LABEL[o.status]}")
+        raise HTTPException(409, f"Заказ №{o.id}: {STATUS_LABEL.get(o.status, o.status)}")
     if code.strip() != o.code:
         raise HTTPException(400, "Код выдачи не совпал")
     o.status = "issued"
@@ -254,45 +250,7 @@ def issue_order(s: Session, pvz_id: int, order_id: int, code: str) -> dict:
     return order_view(s, o)
 
 
-# ---------- курьер ----------
-
-def _courier_order(s: Session, courier_id: int, order_id: int) -> Order:
-    o = _get(s, Order, order_id, "заказ")
-    if o.courier_id != courier_id:
-        raise HTTPException(403, "Этот заказ назначен другому курьеру")
-    return o
-
-
-def courier_picked(s: Session, courier_id: int, order_id: int) -> dict:
-    o = _courier_order(s, courier_id, order_id)
-    if o.status != "courier_assigned":
-        raise HTTPException(409, f"Заказ №{o.id}: {STATUS_LABEL[o.status]}")
-    c, src, dest = s.get(Courier, o.courier_id), s.get(Pvz, o.source_pvz_id), s.get(Pvz, o.dest_pvz_id)
-    c.lat, c.lon = src.lat, src.lon
-    o.status = "in_transit"
-    route = json.loads(o.route_json or "{}").get("delivery", {})
-    mins = max(1, round(route.get("duration_s", 600) / 60))
-    _log(o, f"Курьер {c.name} забрал заказ в «{src.name}»")
-    _notify(s, "pvz", dest.id, o.id, f"К вам едет заказ №{o.id} (курьер {c.name}), ~{mins} мин")
-    s.commit()
-    return order_view(s, o)
-
-
-def courier_delivered(s: Session, courier_id: int, order_id: int) -> dict:
-    o = _courier_order(s, courier_id, order_id)
-    if o.status != "in_transit":
-        raise HTTPException(409, f"Заказ №{o.id}: {STATUS_LABEL[o.status]}")
-    c, dest = s.get(Courier, o.courier_id), s.get(Pvz, o.dest_pvz_id)
-    c.lat, c.lon, c.busy = dest.lat, dest.lon, False
-    o.status, o.delivered_at = "delivered", datetime.now()
-    _log(o, f"Курьер {c.name} доставил заказ в «{dest.name}», заработал {o.courier_pay} ₽")
-    _notify(s, "pvz", dest.id, o.id, f"Заказ №{o.id} доставлен — выдайте покупателю {o.buyer_name}, код {o.code}")
-    _notify(s, "courier", c.id, o.id, f"Заказ №{o.id} доставлен. +{o.courier_pay} ₽ к заработку")
-    s.flush()
-    dispatch_waiting(s)  # освободившийся курьер может взять заказ из очереди
-    s.commit()
-    return order_view(s, o)
-
+# ---------- водитель ----------
 
 CITY_BOUNDS = (56.5, 56.75, 47.7, 48.1)  # Йошкар-Ола с запасом
 
@@ -302,20 +260,12 @@ def in_city(lat: float, lon: float) -> bool:
 
 
 def set_courier_location(s: Session, courier_id: int, lat: float, lon: float) -> dict:
-    """«Где я сейчас»: курьер отмечает своё место. От него система выбирает ближайшего
-    и строит путь до ПВЗ; если курьер едет за заказом — путь пересчитывается."""
+    """«Где я сейчас»: водитель отмечает своё место. От него система выбирает, кому отдать рейс,
+    и с какой точки начать объезд."""
     if not in_city(lat, lon):
         raise HTTPException(400, "Точка вне Йошкар-Олы — отметьте место на карте города")
     c = _get(s, Courier, courier_id, "курьер")
     c.lat, c.lon = lat, lon
-    for o in s.scalars(select(Order).where(Order.courier_id == c.id, Order.status == "courier_assigned")):
-        route = json.loads(o.route_json or "{}")
-        src = s.get(Pvz, o.source_pvz_id)
-        route["approach"] = road_route([(lat, lon), _pt(src)])
-        o.route_json = json.dumps(route)
-        o.road_m = route["approach"]["distance_m"] + route.get("delivery", {}).get("distance_m", 0)
-    s.flush()
-    dispatch_waiting(s)  # свободный курьер появился на карте — заберёт заказ из очереди
     s.commit()
     return {"lat": c.lat, "lon": c.lon, "near": nearest_pvz(s, lat, lon)}
 
@@ -329,21 +279,31 @@ def nearest_pvz(s: Session, lat: float, lon: float) -> dict | None:
 
 # ---------- представления ----------
 
-def order_view(s: Session, o: Order, with_route: bool = True) -> dict:
+def _status_label(o: Order) -> str:
+    if o.status == "awaiting_run":
+        return f"Упакован — уедет рейсом в {runs.next_slot():%H:%M}"
+    if o.status == "in_run" and o.run_id:
+        return f"В рейсе №{o.run_id} — машина едет за заказом"
+    if o.status == "in_transit" and o.run_id:
+        return f"Взят с точки — рейс №{o.run_id} везёт в ПВЗ покупателя"
+    return STATUS_LABEL.get(o.status, o.status)
+
+
+def order_view(s: Session, o: Order) -> dict:
     c = s.get(Courier, o.courier_id) if o.courier_id else None
-    v = {
+    run = s.get(Run, o.run_id) if o.run_id else None
+    return {
         "id": o.id, "product": product_brief(s.get(Product, o.product_id)), "buyer_name": o.buyer_name,
-        "mode": o.mode, "status": o.status, "status_label": STATUS_LABEL[o.status], "code": o.code,
+        "mode": o.mode, "status": o.status, "status_label": _status_label(o), "code": o.code,
         "price": o.price, "discount": o.discount, "paid": o.price - o.discount,
         "source": pvz_brief(s.get(Pvz, o.source_pvz_id)) if o.source_pvz_id else None,
         "dest": pvz_brief(s.get(Pvz, o.dest_pvz_id)), "buyer_pvz": pvz_brief(s.get(Pvz, o.buyer_pvz_id)),
         "courier": {"id": c.id, "name": c.name, "lat": c.lat, "lon": c.lon} if c else None,
-        "courier_pay": o.courier_pay, "distance_m": o.distance_m, "road_m": o.road_m,
+        "run": {"id": run.id, "slot": run.slot, "status": run.status} if run else None,
+        "next_run": runs.next_slot().strftime("%H:%M") if o.status == "awaiting_run" else None,
+        "distance_m": o.distance_m,
         "created_at": o.created_at.strftime("%H:%M"), "history": json.loads(o.history or "[]"),
     }
-    if with_route and o.route_json:
-        v["route"] = json.loads(o.route_json)
-    return v
 
 
 def _notes(s: Session, target: str, target_id: int) -> list[dict]:
@@ -353,20 +313,24 @@ def _notes(s: Session, target: str, target_id: int) -> list[dict]:
 
 
 def pvz_dashboard(s: Session, pvz_id: int) -> dict:
+    runs.auto_form(s)
     p = _get(s, Pvz, pvz_id, "ПВЗ")
     stock = s.execute(select(Stock, Product).join(Product, Stock.product_id == Product.id)
                       .where(Stock.pvz_id == pvz_id).order_by(Product.id)).all()
     orders = list(s.scalars(select(Order).where(or_(Order.source_pvz_id == pvz_id, Order.dest_pvz_id == pvz_id))
                             .order_by(Order.id.desc())))
-    v = [order_view(s, o, with_route=False) for o in orders]
+    v = [order_view(s, o) for o in orders]
     return {
         "pvz": pvz_brief(p),
         "stock": [{**product_brief(pr), "qty": st.qty} for st, pr in stock],
         "to_assemble": [o for o in v if o["source"] and o["source"]["id"] == pvz_id and o["status"] == "assembling"],
-        "to_courier": [o for o in v if o["source"] and o["source"]["id"] == pvz_id and o["status"] in ("awaiting_courier", "courier_assigned")],
+        "to_courier": [o for o in v if o["source"] and o["source"]["id"] == pvz_id and o["mode"] == "deliver"
+                       and o["status"] in ("awaiting_run", "in_run")],
         "to_issue": [o for o in v if o["dest"]["id"] == pvz_id and o["status"] in ("ready", "delivered")],
-        "incoming": [o for o in v if o["dest"]["id"] == pvz_id and o["mode"] == "deliver" and o["status"] in ("assembling", "awaiting_courier", "courier_assigned", "in_transit")],
+        "incoming": [o for o in v if o["dest"]["id"] == pvz_id and o["mode"] == "deliver"
+                     and o["status"] in ("assembling", "awaiting_run", "in_run", "in_transit")],
         "supplies": incoming_for_pvz(s, pvz_id),
+        "schedule": runs.schedule_text(), "next_run": runs.next_slot().strftime("%H:%M"),
         "notifications": _notes(s, "pvz", pvz_id),
     }
 
@@ -376,22 +340,25 @@ def couriers(s: Session) -> list[dict]:
 
 
 def courier_dashboard(s: Session, courier_id: int) -> dict:
+    runs.auto_form(s)
     c = _get(s, Courier, courier_id, "курьер")
-    active = s.scalars(select(Order).where(Order.courier_id == courier_id, Order.status.in_(("courier_assigned", "in_transit")))
-                       .order_by(Order.id))
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    done = list(s.scalars(select(Order).where(Order.courier_id == courier_id, Order.status.in_(("delivered", "issued")),
-                                              Order.delivered_at >= today).order_by(Order.delivered_at.desc())))
+    ready = list(s.scalars(select(Order).where(Order.status == "awaiting_run").order_by(Order.ready_at)))
+    done = runs.courier_runs_today(s, courier_id)
+    p = Params()
     return {
         "courier": {"id": c.id, "name": c.name, "lat": c.lat, "lon": c.lon, "busy": c.busy, "near": nearest_pvz(s, c.lat, c.lon)},
-        "tasks": [order_view(s, o) for o in active],
+        "run": runs.active_run(s, courier_id),
+        "ready": [{"id": o.id, "product": f"{s.get(Product, o.product_id).emoji} {s.get(Product, o.product_id).name}",
+                   "from": pvz_brief(s.get(Pvz, o.source_pvz_id)), "to": pvz_brief(s.get(Pvz, o.dest_pvz_id)),
+                   "ready_at": o.ready_at.strftime("%H:%M") if o.ready_at else ""} for o in ready],
+        "schedule": runs.schedule_text(), "next_run": runs.next_slot().strftime("%H:%M"),
+        "limits": {"stops": runs.MAX_STOPS, "orders": runs.MAX_ORDERS, "link_m": runs.LINK_M},
         "earnings": {
-            "today": sum(o.courier_pay for o in done), "deliveries": len(done),
-            "km": round(sum(o.road_m for o in done) / 1000, 1),
-            "rate": f"{COURIER_BASE_PAY} ₽ за доставку + {COURIER_PAY_PER_KM} ₽ за км",
-            "items": [{"id": o.id, "product": s.get(Product, o.product_id).name, "pay": o.courier_pay,
-                       "km": round(o.road_m / 1000, 1), "time": o.delivered_at.strftime("%H:%M"),
-                       "from": s.get(Pvz, o.source_pvz_id).name, "to": s.get(Pvz, o.dest_pvz_id).name} for o in done],
+            "today": sum(r.pay for r in done), "runs": len(done), "orders": sum(r.orders_count for r in done),
+            "km": round(sum(r.km for r in done), 1),
+            "rate": f"{p.run_cost:.0f} ₽ за рейс + {p.stop_cost:.0f} ₽ за остановку + {p.km_cost:.0f} ₽ за км",
+            "items": [{"id": r.id, "slot": r.slot, "stops": len(json.loads(r.stops_json)), "orders": r.orders_count,
+                       "km": r.km, "pay": r.pay, "time": r.finished_at.strftime("%H:%M")} for r in done],
         },
         "notifications": _notes(s, "courier", courier_id),
     }

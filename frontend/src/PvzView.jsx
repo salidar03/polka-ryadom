@@ -60,7 +60,7 @@ export default function PvzView({ user }) {
               {dash.to_assemble.map((o) => (
                 <div key={o.id} className="card task">
                   <p><b>№{o.id} · {o.product.emoji} {o.product.name}</b></p>
-                  <p className="muted small">Возьмите с полки и упакуйте. Поедет в «{o.dest.name}» ({km(o.distance_m)}), покупатель {o.buyer_name}.</p>
+                  <p className="muted small">Возьмите с полки и упакуйте. Поедет в «{o.dest.name}» ({km(o.distance_m)}), покупатель {o.buyer_name}. Ближайший рейс — в {dash.next_run}.</p>
                   <button type="button" className="primary" disabled={busy} onClick={() => act(() => confirmAssembled(o.id))}>Подтвердить сбор заказа</button>
                 </div>
               ))}
@@ -68,10 +68,11 @@ export default function PvzView({ user }) {
 
             {dash.to_courier.length > 0 && (
               <section className="block">
-                <h2>Передать курьеру</h2>
+                <h2>Упаковано — ждёт рейса</h2>
+                <p className="muted small">Рейсы: {dash.schedule}. Отдайте пакет водителю — он нажмёт «Заказ взят с точки».</p>
                 <ul className="list">
                   {dash.to_courier.map((o) => (
-                    <li key={o.id}><div><b>№{o.id} · {o.product.name}</b><br /><StatusChip status={o.status} label={o.courier ? `${o.status_label}: ${o.courier.name}` : o.status_label} /></div></li>
+                    <li key={o.id}><div><b>№{o.id} · {o.product.name}</b> → «{o.dest.name}»<br /><StatusChip status={o.status} label={o.courier ? `${o.status_label}, водитель ${o.courier.name}` : o.status_label} /></div></li>
                   ))}
                 </ul>
               </section>
@@ -83,7 +84,7 @@ export default function PvzView({ user }) {
               {dash.to_issue.map((o) => (
                 <form key={o.id} className="card task" onSubmit={(e) => { e.preventDefault(); act(() => issueOrder(o.id, codes[o.id] || '')); }}>
                   <p><b>№{o.id} · {o.product.emoji} {o.product.name}</b> — {o.buyer_name}</p>
-                  <p className="muted small">{o.mode === 'pickup' ? `Самовывоз с нашей полки, оплачено ${o.paid} ₽` : `Привёз курьер ${o.courier?.name || ''}`}</p>
+                  <p className="muted small">{o.mode === 'pickup' ? `Самовывоз с нашей полки, оплачено ${o.paid} ₽` : `Привёз рейс №${o.run?.id || ''}, водитель ${o.courier?.name || ''}`}</p>
                   <div className="actions">
                     <input aria-label="Код выдачи" className="code-input" placeholder="Код" inputMode="numeric" maxLength={4}
                       value={codes[o.id] || ''} onChange={(e) => setCodes({ ...codes, [o.id]: e.target.value })} />

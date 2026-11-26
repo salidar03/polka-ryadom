@@ -1,12 +1,15 @@
-"""Полный путь заказа через API с входом по ролям: покупатель → ПВЗ → курьер → выдача."""
+"""Полный путь заказа через API с входом по ролям: покупатель → ПВЗ упаковал → рейс машины → выдача."""
 import os
 import tempfile
+from datetime import datetime, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "flow.db").replace("\\", "/")
 os.environ["POLKA_ROUTING"] = "off"  # без сети: маршрут по прямой с поправкой на дороги
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import runs  # noqa: E402
+from app.db import Order, SessionLocal  # noqa: E402
 from app.geo import dist_m  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -15,78 +18,6 @@ def login(c, role, user, password="1234"):
     r = c.post("/api/auth/login", json={"role": role, "login": user, "password": password})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['token']}"}
-
-
-def find_offer(c, product_id):
-    """ПВЗ покупателя, где товара нет, но он есть рядом."""
-    for p in c.get("/api/pvz").json():
-        o = c.get(f"/api/offers?product_id={product_id}&pvz_id={p['id']}").json()
-        if o["here"] is None and o["nearest"]:
-            return p, o
-    raise AssertionError("нет подходящего ПВЗ")
-
-
-def test_login_rules():
-    with TestClient(app) as c:
-        assert c.post("/api/auth/login", json={"role": "buyer", "login": "ivan", "password": "0000"}).status_code == 401
-        assert c.post("/api/auth/login", json={"role": "pvz", "login": "ivan", "password": "1234"}).status_code == 403
-        assert c.get("/api/my/orders").status_code == 401
-        buyer = login(c, "buyer", "ivan")
-        assert c.get("/api/pvz/me/dashboard", headers=buyer).status_code == 403
-
-
-def test_full_delivery_flow_with_courier_pay():
-    with TestClient(app) as c:
-        c.post("/api/demo/reset")
-        buyer = login(c, "buyer", "ivan")
-        prod = next(p for p in c.get("/api/products").json() if p["in_city"] > 0)
-        buyer_pvz, offer = find_offer(c, prod["id"])
-        src = offer["nearest"]
-        assert offer["pickup_price"] == prod["price"] - offer["discount"] and 20 <= offer["discount"] <= 60
-
-        order = c.post("/api/orders", headers=buyer, json={"product_id": prod["id"], "buyer_pvz_id": buyer_pvz["id"],
-                                                           "mode": "deliver", "source_pvz_id": src["id"]}).json()
-        assert order["status"] == "assembling" and order["paid"] == prod["price"]
-
-        pvz_src = login(c, "pvz", f"pvz{src['id']}")
-        dash = c.get("/api/pvz/me/dashboard", headers=pvz_src).json()
-        assert dash["to_assemble"][0]["id"] == order["id"] and "соберите" in dash["notifications"][0]["text"]
-        # чужой ПВЗ не может подтвердить сбор
-        other = login(c, "pvz", f"pvz{buyer_pvz['id']}")
-        assert c.post(f"/api/orders/{order['id']}/assembled", headers=other).status_code == 403
-
-        # курьеров ещё нет — собранный заказ ждёт в очереди
-        assert c.get("/api/couriers").json() == []
-        order = c.post(f"/api/orders/{order['id']}/assembled", headers=pvz_src).json()
-        assert order["status"] == "awaiting_courier"
-
-        # зарегистрировался курьер — заказ из очереди сразу достаётся ему
-        courier, cid = reg_courier(c, "far_c", 56.60, 47.95)
-        task = c.get("/api/courier/me/dashboard", headers=courier).json()["tasks"][0]
-        assert task["id"] == order["id"] and task["courier_pay"] >= 60 and task["route"]["delivery"]["path"]
-        order = task
-        assert c.post(f"/api/orders/{order['id']}/picked", headers=courier).json()["status"] == "in_transit"
-        assert c.post(f"/api/orders/{order['id']}/delivered", headers=courier).json()["status"] == "delivered"
-        earn = c.get("/api/courier/me/dashboard", headers=courier).json()["earnings"]
-        assert earn["deliveries"] == 1 and earn["today"] == order["courier_pay"]
-
-        dest = login(c, "pvz", f"pvz{buyer_pvz['id']}")
-        assert c.post(f"/api/orders/{order['id']}/issued", headers=dest, json={"code": "0000"}).status_code == 400
-        assert c.post(f"/api/orders/{order['id']}/issued", headers=dest, json={"code": order["code"]}).json()["status"] == "issued"
-        assert c.get("/api/my/orders", headers=buyer).json()[0]["status"] == "issued"
-
-        # «Где я сейчас»: второй курьер отмечает место у ПВЗ с товаром — и следующий заказ достаётся ему, а не дальнему
-        near, near_id = reg_courier(c, "near_c")
-        loc = c.post("/api/courier/me/location", headers=near, json={"lat": src["lat"] + 0.0004, "lon": src["lon"]}).json()
-        assert loc["near"]["id"] == src["id"]
-        assert c.post("/api/courier/me/location", headers=near, json={"lat": 55.75, "lon": 37.6}).status_code == 400
-        order2 = c.post("/api/orders", headers=buyer, json={"product_id": prod["id"], "buyer_pvz_id": buyer_pvz["id"],
-                                                            "mode": "deliver", "source_pvz_id": src["id"]}).json()
-        couriers_before = {x["id"]: x for x in c.get("/api/couriers").json()}
-        order2 = c.post(f"/api/orders/{order2['id']}/assembled", headers=pvz_src).json()
-        assert order2["courier"]["id"] == near_id
-        free = [x for x in couriers_before.values() if not x["busy"]]
-        assert min(free, key=lambda x: dist_m((x["lat"], x["lon"]), (src["lat"], src["lon"])))["id"] == near_id
 
 
 def reg_courier(c, login_, lat=None, lon=None):
@@ -98,18 +29,176 @@ def reg_courier(c, login_, lat=None, lon=None):
     return {"Authorization": f"Bearer {r.json()['token']}"}, r.json()["user"]["courier"]["id"]
 
 
+def d(a, b):
+    return dist_m((a["lat"], a["lon"]), (b["lat"], b["lon"]))
+
+
+def pick_points(c):
+    """A — ПВЗ с товаром, B и C — ПВЗ покупателей в пересекающихся кругах рядом с A, F и G — далеко от них."""
+    pts = [p for p in c.get("/api/pvz").json() if p["source"] != "registered"]
+    for a in pts:
+        near = sorted((p for p in pts if p["id"] != a["id"] and 400 < d(a, p) < 1300), key=lambda p: d(a, p))
+        if len(near) < 2:
+            continue
+        b, cc = near[0], near[1]
+        far = [p for p in pts if min(d(p, a), d(p, b), d(p, cc)) > 3000]
+        for f in far:
+            g = next((p for p in far if p["id"] != f["id"] and 400 < d(f, p) < 1300), None)
+            if g:
+                return a, b, cc, f, g
+    raise AssertionError("не нашли подходящие ПВЗ")
+
+
+def put_on_shelf(c, pvz, product_id, qty=5):
+    h = login(c, "pvz", f"pvz{pvz['id']}")
+    assert c.post("/api/pvz/me/stock", headers=h, json={"product_id": product_id, "qty": qty}).status_code == 200
+    return h
+
+
+def order(c, buyer, product_id, buyer_pvz, src, mode="deliver"):
+    r = c.post("/api/orders", headers=buyer, json={"product_id": product_id, "buyer_pvz_id": buyer_pvz["id"],
+                                                   "mode": mode, "source_pvz_id": src["id"]})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_login_rules():
+    with TestClient(app) as c:
+        assert c.post("/api/auth/login", json={"role": "buyer", "login": "ivan", "password": "0000"}).status_code == 401
+        assert c.post("/api/auth/login", json={"role": "pvz", "login": "ivan", "password": "1234"}).status_code == 403
+        assert c.get("/api/my/orders").status_code == 401
+        buyer = login(c, "buyer", "ivan")
+        assert c.get("/api/pvz/me/dashboard", headers=buyer).status_code == 403
+
+
+def test_shelves_start_empty():
+    with TestClient(app) as c:
+        c.post("/api/demo/reset")
+        assert all(p["in_city"] == 0 for p in c.get("/api/products").json())
+
+
+def test_run_picks_orders_in_overlapping_circles():
+    with TestClient(app) as c:
+        c.post("/api/demo/reset")
+        a, b, cc, f, g = pick_points(c)
+        buyer = login(c, "buyer", "ivan")
+        pvz_a = put_on_shelf(c, a, 1)
+        pvz_f = put_on_shelf(c, f, 2)
+
+        offer = c.get(f"/api/offers?product_id=1&pvz_id={b['id']}").json()
+        assert offer["here"] is None and offer["nearest"]["id"] == a["id"] and offer["next_run"]
+        assert 20 <= offer["discount"] <= 60
+
+        o1 = order(c, buyer, 1, b, a)
+        o2 = order(c, buyer, 1, cc, a)
+        o3 = order(c, buyer, 2, g, f)
+        assert o1["status"] == "assembling"
+        # чужой ПВЗ не может подтвердить сбор
+        assert c.post(f"/api/orders/{o1['id']}/assembled", headers=login(c, "pvz", f"pvz{b['id']}")).status_code == 403
+        for o, h in ((o1, pvz_a), (o2, pvz_a), (o3, pvz_f)):
+            r = c.post(f"/api/orders/{o['id']}/assembled", headers=h).json()
+            assert r["status"] == "awaiting_run" and r["next_run"] and "рейсом" in r["status_label"]
+        dash_a = c.get("/api/pvz/me/dashboard", headers=pvz_a).json()
+        assert {x["id"] for x in dash_a["to_courier"]} == {o1["id"], o2["id"]}
+
+        # водитель у точки A: ждёт рейса, видит упакованные заказы
+        drv, drv_id = reg_courier(c, "drv1", a["lat"] + 0.0005, a["lon"])
+        dash = c.get("/api/courier/me/dashboard", headers=drv).json()
+        assert dash["run"] is None and len(dash["ready"]) == 3 and dash["schedule"].startswith("10:00")
+
+        # «Выехать в рейс сейчас»: берёт заказы в пересекающихся кругах, дальний остаётся ждать
+        run = c.post("/api/courier/me/run/start", headers=drv).json()
+        ids = {x["id"] for st in run["stops"] for x in st["pickups"]}
+        assert ids == {o1["id"], o2["id"]}
+        assert run["stops"][0]["pvz"]["id"] == a["id"] and run["current"] == 0
+        assert run["pay"] == round(900 + 120 * len(run["stops"]) + 40 * run["km"]) or abs(run["pay"] - (900 + 120 * len(run["stops"]) + 40 * run["km"])) <= 1
+        assert run["route"]["path"]
+        assert c.post("/api/courier/me/run/start", headers=drv).status_code == 409   # второй рейс, пока не закончен первый
+
+        # выгрузить, не взяв с точки, нельзя
+        drop_idx = next(st["index"] for st in run["stops"] if st["drops"])
+        assert c.post(f"/api/runs/{run['id']}/stops/{drop_idx}/unloaded", headers=drv).status_code == 409
+        for oid in (o1["id"], o2["id"]):
+            run = c.post(f"/api/orders/{oid}/picked", headers=drv).json()
+        assert c.post(f"/api/orders/{o1['id']}/picked", headers=drv).status_code == 409
+        assert c.post(f"/api/orders/{o3['id']}/picked", headers=drv).status_code == 403    # не из этого рейса
+        assert run["current"] == 1
+        mine = {x["id"]: x for x in c.get("/api/my/orders", headers=buyer).json()}
+        assert mine[o1["id"]]["status"] == "in_transit" and mine[o1["id"]]["run"]["id"] == run["id"]
+
+        for st in run["stops"]:
+            if st["drops"]:
+                run = c.post(f"/api/runs/{run['id']}/stops/{st['index']}/unloaded", headers=drv).json()
+        assert run["status"] == "done"
+        dash = c.get("/api/courier/me/dashboard", headers=drv).json()
+        assert dash["run"] is None and dash["earnings"]["runs"] == 1 and dash["earnings"]["today"] == run["pay"]
+        assert dash["earnings"]["orders"] == 2 and [x["id"] for x in dash["ready"]] == [o3["id"]]
+
+        pvz_b = login(c, "pvz", f"pvz{b['id']}")
+        assert c.post(f"/api/orders/{o1['id']}/issued", headers=pvz_b, json={"code": "0000"}).status_code == 400
+        assert c.post(f"/api/orders/{o1['id']}/issued", headers=pvz_b, json={"code": o1["code"]}).json()["status"] == "issued"
+
+        # второй водитель забирает дальний заказ
+        drv2, _ = reg_courier(c, "drv2", f["lat"], f["lon"] + 0.0005)
+        run2 = c.post("/api/courier/me/run/start", headers=drv2).json()
+        assert [x["id"] for st in run2["stops"] for x in st["pickups"]] == [o3["id"]]
+        assert c.post("/api/courier/me/run/start", headers=drv).status_code == 409   # готовых заказов больше нет
+
+
+def test_runs_leave_on_schedule():
+    with TestClient(app) as c:
+        c.post("/api/demo/reset")
+        a, b, *_ = pick_points(c)
+        buyer = login(c, "buyer", "maria")
+        pvz_a = put_on_shelf(c, a, 3)
+        o = order(c, buyer, 3, b, a)
+        c.post(f"/api/orders/{o['id']}/assembled", headers=pvz_a)
+        reg_courier(c, "sched_drv", a["lat"], a["lon"])
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        with SessionLocal() as s:
+            s.get(Order, o["id"]).ready_at = today + timedelta(hours=11)    # упакован в 11:00
+            s.commit()
+            runs.auto_form(s, today + timedelta(hours=12, minutes=30))      # 12:30 — рейса ещё не было
+            assert s.get(Order, o["id"]).status == "awaiting_run"
+            runs.auto_form(s, today + timedelta(hours=13, minutes=1))       # 13:01 — уехал рейсом 13:00
+            got = s.get(Order, o["id"])
+            assert got.status == "in_run" and got.run_id
+
+
+def test_stops_pick_before_drop():
+    class O:
+        def __init__(self, i, src, dst):
+            self.id, self.source_pvz_id, self.dest_pvz_id = i, src, dst
+
+    pos = {1: (56.630, 47.880), 2: (56.636, 47.880), 3: (56.642, 47.880)}
+    # заказ 1: 3 → 1, заказ 2: 1 → 2. Водитель стоит у точки 1
+    stops = runs.plan_stops((56.6299, 47.880), [O(1, 3, 1), O(2, 1, 2)], pos)
+    seen = set()
+    for st in stops:
+        assert all(oid in seen for oid in st["drops"])   # выгружаем только то, что уже взяли
+        seen |= set(st["pickups"])
+    assert [st["pvz_id"] for st in stops][0] == 1 and seen == {1, 2}
+
+
 def test_pickup_gets_discount_and_reserves_stock():
     with TestClient(app) as c:
         c.post("/api/demo/reset")
+        a, b, *_ = pick_points(c)
+        put_on_shelf(c, a, 4, qty=3)
         buyer = login(c, "buyer", "maria")
-        prod = next(p for p in c.get("/api/products").json() if p["in_city"] > 0)
-        buyer_pvz, offer = find_offer(c, prod["id"])
-        src = offer["nearest"]
-        o = c.post("/api/orders", headers=buyer, json={"product_id": prod["id"], "buyer_pvz_id": buyer_pvz["id"],
-                                                       "mode": "pickup", "source_pvz_id": src["id"]}).json()
-        assert o["status"] == "ready" and o["dest"]["id"] == src["id"] and o["paid"] == offer["pickup_price"]
-        stock = {x["id"]: x["qty"] for x in c.get("/api/pvz/me/dashboard", headers=login(c, "pvz", f"pvz{src['id']}")).json()["stock"]}
-        assert stock[prod["id"]] == src["qty"] - 1
+        offer = c.get(f"/api/offers?product_id=4&pvz_id={b['id']}").json()
+        o = order(c, buyer, 4, b, a, mode="pickup")
+        assert o["status"] == "ready" and o["dest"]["id"] == a["id"] and o["paid"] == offer["pickup_price"]
+        stock = {x["id"]: x["qty"] for x in c.get("/api/pvz/me/dashboard", headers=login(c, "pvz", f"pvz{a['id']}")).json()["stock"]}
+        assert stock[4] == 2
+
+
+def test_courier_location():
+    with TestClient(app) as c:
+        h, _ = reg_courier(c, "loc_drv")
+        loc = c.post("/api/courier/me/location", headers=h, json={"lat": 56.6345, "lon": 47.8925}).json()
+        assert loc["near"]["id"]
+        assert c.post("/api/courier/me/location", headers=h, json={"lat": 55.75, "lon": 37.6}).status_code == 400
 
 
 def test_register_pvz_courier_buyer():
