@@ -56,7 +56,7 @@ class Supply(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     supplier_account_id: Mapped[int] = mapped_column(Integer, index=True)
-    kind: Mapped[str] = mapped_column(String(12))        # shelf — полка ПВЗ Йошкар-Олы | city — другой город | warehouse — склад WB
+    kind: Mapped[str] = mapped_column(String(20))        # shelf — на полку ПВЗ | city — другой город | warehouse — склад WB | to_seller — вывоз продавцу
     city: Mapped[str] = mapped_column(String(60))
     pvz_id: Mapped[int | None] = mapped_column(ForeignKey("pvz.id"), nullable=True)
     qty: Mapped[int] = mapped_column(Integer)
@@ -71,6 +71,20 @@ class Stock(Base):
     pvz_id: Mapped[int] = mapped_column(ForeignKey("pvz.id"), primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), primary_key=True)
     qty: Mapped[int] = mapped_column(Integer, default=0)
+    since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # с какого дня товар лежит на полке
+
+
+class Ledger(Base):
+    """Журнал начислений: + деньги ПВЗ или продавцу, − списания (штрафы, комиссия, логистика, платное хранение)."""
+    __tablename__ = "ledger"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    party: Mapped[str] = mapped_column(String(10), index=True)    # pvz | seller
+    party_id: Mapped[int] = mapped_column(Integer, index=True)     # id ПВЗ или аккаунта продавца
+    kind: Mapped[str] = mapped_column(String(20))                  # accept, storage, assembly, issue, return, penalty, sale, …
+    amount: Mapped[float] = mapped_column(Float)
+    note: Mapped[str] = mapped_column(String(300), default="")
+    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
 class Courier(Base):
@@ -140,6 +154,7 @@ class Order(Base):
     run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # рейс, который везёт заказ
     ready_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)      # ПВЗ упаковал — ждёт рейса
     picked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)     # водитель взял с точки
+    return_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)    # ok — не подошёл | defect — брак
     distance_m: Mapped[int] = mapped_column(Integer, default=0)   # по прямой между ПВЗ
     road_m: Mapped[int] = mapped_column(Integer, default=0)       # по дорогам: подъезд + доставка
     route_json: Mapped[str] = mapped_column(Text, default="")     # маршрут курьера по улицам
@@ -194,7 +209,8 @@ def _ensure_columns() -> None:
     tables = insp.get_table_names()
     adds = {
         "products": {"category": "VARCHAR(40) DEFAULT 'other'", "supplier_account_id": "INTEGER", "supplier_name": "VARCHAR(100)"},
-        "orders": {"run_id": "INTEGER", "ready_at": "TIMESTAMP", "picked_at": "TIMESTAMP"},
+        "orders": {"run_id": "INTEGER", "ready_at": "TIMESTAMP", "picked_at": "TIMESTAMP", "return_reason": "VARCHAR(20)"},
+        "stock": {"since": "TIMESTAMP"},
     }
     with engine.begin() as conn:
         for table, cols in adds.items():
@@ -264,10 +280,11 @@ def _remove_old_demo_couriers(s: Session) -> None:
 
 
 def reset_demo() -> None:
-    """Сбросить демо: заказы, рейсы, поставки и уведомления удаляются, полки пустеют,
+    """Сбросить демо: заказы, рейсы, поставки, начисления и уведомления удаляются, полки пустеют,
     водители возвращаются туда, где начинали смену. Учётные записи и ПВЗ остаются."""
     with Session(engine) as s:
         s.execute(delete(Notification))
+        s.execute(delete(Ledger))
         s.execute(delete(Order))
         s.execute(delete(Run))
         s.execute(delete(Supply))
