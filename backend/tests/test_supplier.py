@@ -116,3 +116,24 @@ def test_same_product_from_other_seller_is_offered():
         assert c.get(f"/api/offers?product_id=9&pvz_id={spot['id']}").json()["alternatives"] == []
         item = next(x for x in c.get("/api/supplier/me/dashboard", headers=b).json()["products"] if x["id"] == res_b["product_id"])
         assert item["competitors"] == 1 and item["shelf_points"] >= 1
+
+
+def test_seller_map_shows_goods_by_city_and_pvz():
+    with TestClient(app) as c:
+        sup = auth(c, {"role": "supplier", "name": "ООО Карта", "login": "map_sup", "password": "secret"})
+        res = c.post("/api/supplier/products", headers=sup, json={"name": "Рюкзак городской", "category": "hobby",
+                                                                   "price": 2500, "qty": 2000}).json()
+        spots = res["plan"]["cities"][0]["pvz"]
+        m = c.get("/api/supplier/me/dashboard", headers=sup).json()["map"]
+        assert {p["id"] for p in m["pvz"]} == {p["id"] for p in spots}                     # едет в ПВЗ по плану
+        assert all(i["in_transit"] > 0 and i["on_shelf"] == 0 for p in m["pvz"] for i in p["items"])
+        sent = {r["city"]: r["qty"] for r in res["plan"]["cities"] if not r["pvz_network"] and r["qty"]}
+        assert {x["city"]: x["qty"] for x in m["cities"]} == sent                           # другие города
+        assert sum(w["qty"] for w in m["warehouse"]) == res["plan"]["to_warehouse"]
+        first = spots[0]
+        pvz = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"role": "pvz", "login": f"pvz{first['id']}", "password": "1234"}).json()["token"]}
+        sid = next(x["id"] for x in c.get("/api/pvz/me/dashboard", headers=pvz).json()["supplies"] if x["product"]["id"] == res["product_id"])
+        c.post(f"/api/supplies/{sid}/accept", headers=pvz)
+        m = c.get("/api/supplier/me/dashboard", headers=sup).json()["map"]
+        row = next(p for p in m["pvz"] if p["id"] == first["id"])["items"][0]
+        assert row["on_shelf"] == first["qty"] and row["in_transit"] == 0                  # принято — лежит на полке

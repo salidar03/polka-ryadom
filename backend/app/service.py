@@ -7,7 +7,9 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from . import finance as fin
 from . import runs
+from . import scenarios as sc
 from .db import Account, Courier, Notification, Order, Product, Pvz, Run, Stock
 from .economics import Params
 from .geo import ROAD_FACTOR, dist_m
@@ -25,6 +27,8 @@ STATUS_LABEL = {
     "in_transit": "Взят с точки — едет в ПВЗ покупателя",
     "delivered": "Доставлен — можно забирать",
     "issued": "Выдан",
+    "return_requested": "Возврат оформлен — отнесите товар в ПВЗ",
+    "returned": "Возврат принят — деньги вернутся покупателю",
 }
 
 
@@ -155,6 +159,7 @@ def create_order(s: Session, buyer: Account, product_id: int, buyer_pvz_id: int,
         s.add(o)
         s.flush()
         _log(o, f"Самовывоз из «{src.name}» со скидкой {disc} ₽ — рейс не нужен. Код {code}")
+        fin.post(s, "pvz", src.id, "assembly", fin.PVZ_ASSEMBLY, f"Отложить заказ №{o.id}", o.id)
         _notify(s, "pvz", src.id, o.id, f"Заказ №{o.id}: отложите «{prod.name}» — {buyer.name} заберёт сам. Код выдачи {code}")
         s.commit()
         return order_view(s, o)
@@ -194,11 +199,7 @@ def add_stock(s: Session, pvz_id: int, product_id: int, qty: int) -> dict:
     _get(s, Product, product_id, "товар")
     if qty <= 0 or qty > 500:
         raise HTTPException(400, "Количество — от 1 до 500")
-    st = s.get(Stock, {"pvz_id": pvz_id, "product_id": product_id})
-    if st is None:
-        st = Stock(pvz_id=pvz_id, product_id=product_id, qty=0)
-        s.add(st)
-    st.qty += qty
+    st = sc.put_on_shelf(s, pvz_id, product_id, qty)
     s.commit()
     return {"pvz_id": pvz_id, "product_id": product_id, "qty": st.qty}
 
@@ -230,6 +231,7 @@ def confirm_assembled(s: Session, pvz_id: int, order_id: int) -> dict:
     slot = runs.next_slot()
     o.status, o.ready_at = "awaiting_run", datetime.now()
     _log(o, f"ПВЗ собрал и упаковал заказ — уедет ближайшим рейсом в {slot:%H:%M}")
+    fin.post(s, "pvz", pvz_id, "assembly", fin.PVZ_ASSEMBLY, f"Сборка заказа №{o.id}", o.id)
     for c in s.scalars(select(Courier).where(Courier.busy.is_(False))):
         _notify(s, "courier", c.id, o.id, f"Заказ №{o.id} упакован в «{s.get(Pvz, pvz_id).name}» — ждёт рейса в {slot:%H:%M}")
     s.commit()
@@ -246,6 +248,13 @@ def issue_order(s: Session, pvz_id: int, order_id: int, code: str) -> dict:
         raise HTTPException(400, "Код выдачи не совпал")
     o.status = "issued"
     _log(o, f"Выдан покупателю {o.buyer_name}")
+    fin.post(s, "pvz", pvz_id, "issue", fin.PVZ_ISSUE, f"Выдача заказа №{o.id}", o.id)
+    econ = fin.order_economics(s, o)
+    seller = fin.seller_of(s, o)
+    fin.post(s, "seller", seller, "sale", o.price, f"Продажа №{o.id}", o.id)
+    fin.post(s, "seller", seller, "commission", -econ["commission"], f"Комиссия {round(fin.COMMISSION * 100)}% с №{o.id}", o.id)
+    fin.post(s, "seller", seller, "logistics", -econ["seller_logistics"],
+             f"Логистика №{o.id}: {'через хаб' if o.mode == 'hub' else 'с полки ПВЗ'}", o.id)
     s.commit()
     return order_view(s, o)
 
@@ -301,6 +310,7 @@ def order_view(s: Session, o: Order) -> dict:
         "courier": {"id": c.id, "name": c.name, "lat": c.lat, "lon": c.lon} if c else None,
         "run": {"id": run.id, "slot": run.slot, "status": run.status} if run else None,
         "next_run": runs.next_slot().strftime("%H:%M") if o.status == "awaiting_run" else None,
+        "return_reason": o.return_reason, "economics": fin.order_economics(s, o),
         "distance_m": o.distance_m,
         "created_at": o.created_at.strftime("%H:%M"), "history": json.loads(o.history or "[]"),
     }
@@ -316,20 +326,28 @@ def pvz_dashboard(s: Session, pvz_id: int) -> dict:
     runs.auto_form(s)
     p = _get(s, Pvz, pvz_id, "ПВЗ")
     stock = s.execute(select(Stock, Product).join(Product, Stock.product_id == Product.id)
-                      .where(Stock.pvz_id == pvz_id).order_by(Product.id)).all()
+                      .where(Stock.pvz_id == pvz_id, Stock.qty > 0).order_by(Product.id)).all()
     orders = list(s.scalars(select(Order).where(or_(Order.source_pvz_id == pvz_id, Order.dest_pvz_id == pvz_id))
                             .order_by(Order.id.desc())))
     v = [order_view(s, o) for o in orders]
     return {
         "pvz": pvz_brief(p),
-        "stock": [{**product_brief(pr), "qty": st.qty} for st, pr in stock],
+        "stock": [{**product_brief(pr), "qty": st.qty, "age": sc.shelf_age(st)} for st, pr in stock],
+        "capacity": {"used": sc.shelf_used(s, pvz_id), "total": fin.PVZ_CAPACITY},
         "to_assemble": [o for o in v if o["source"] and o["source"]["id"] == pvz_id and o["status"] == "assembling"],
         "to_courier": [o for o in v if o["source"] and o["source"]["id"] == pvz_id and o["mode"] == "deliver"
                        and o["status"] in ("awaiting_run", "in_run")],
         "to_issue": [o for o in v if o["dest"]["id"] == pvz_id and o["status"] in ("ready", "delivered")],
         "incoming": [o for o in v if o["dest"]["id"] == pvz_id and o["mode"] == "deliver"
                      and o["status"] in ("assembling", "awaiting_run", "in_run", "in_transit")],
+        "from_hub": [o for o in v if o["dest"]["id"] == pvz_id and o["status"] == "via_hub"],
+        "returns": [o for o in v if o["dest"]["id"] == pvz_id and o["status"] == "return_requested"],
         "supplies": incoming_for_pvz(s, pvz_id),
+        "to_seller": sc.outgoing_for_pvz(s, pvz_id),
+        "peak": fin.PEAK_HOURS[0] <= datetime.now().hour < fin.PEAK_HOURS[1],
+        "finance": {**fin.ledger_summary(s, "pvz", pvz_id), "tariffs": fin.pvz_tariffs(),
+                    "month_estimate": fin.pvz_month_estimate(), "capacity": fin.PVZ_CAPACITY,
+                    "free_days": fin.FREE_STORAGE_DAYS, "remove_day": fin.AUTO_REMOVE_DAY},
         "schedule": runs.schedule_text(), "next_run": runs.next_slot().strftime("%H:%M"),
         "notifications": _notes(s, "pvz", pvz_id),
     }
