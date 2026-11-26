@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CircleMarker, Polyline, Tooltip } from 'react-leaflet';
-import { createOrder, fetchMyOrders, fetchOffers, fetchProducts, fetchPvz } from './api.js';
+import { createOrder, fetchMyOrders, fetchOffers, fetchProducts, fetchPvz, requestReturn } from './api.js';
 import { CityMap, FlyTo, StatusChip, WB, fmt, km, usePoll } from './common.jsx';
 
 const PVZ_KEY = 'polka-buyer-pvz';
@@ -17,6 +17,12 @@ export default function BuyerView({ user }) {
   const [placed, setPlaced] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [returning, setReturning] = useState(null); // заказ, для которого выбираем причину возврата
+
+  const doReturn = async (orderId, reason) => {
+    setBusy(true);
+    try { await requestReturn(orderId, reason); setReturning(null); setOrders(await fetchMyOrders()); setError(''); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
 
   useEffect(() => {
     fetchPvz().then(setPvz).catch((e) => setError(e.message));
@@ -175,6 +181,16 @@ export default function BuyerView({ user }) {
                   </span>
                 </div>
                 {['ready', 'delivered'].includes(o.status) && <span className="code" title="Код выдачи">{o.code}</span>}
+                {o.status === 'issued' && returning !== o.id && (
+                  <button type="button" className="secondary small-btn" disabled={busy} onClick={() => setReturning(o.id)}>Вернуть</button>
+                )}
+                {o.status === 'issued' && returning === o.id && (
+                  <span className="actions">
+                    <button type="button" className="secondary small-btn" disabled={busy} onClick={() => doReturn(o.id, 'ok')}>Не подошёл</button>
+                    <button type="button" className="danger small-btn" disabled={busy} onClick={() => doReturn(o.id, 'defect')}>Брак</button>
+                    <button type="button" className="link" onClick={() => setReturning(null)}>Отмена</button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>

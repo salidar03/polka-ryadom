@@ -54,6 +54,14 @@ export const removeStock = (productId, qty) => request(`/api/pvz/me/stock/${prod
 export const confirmAssembled = (orderId) => post(`/api/orders/${orderId}/assembled`);
 export const issueOrder = (orderId, code) => post(`/api/orders/${orderId}/issued`, { code });
 
+// сценарии: возврат, сбой, хаб, вывоз, долгое хранение
+export const requestReturn = (orderId, reason) => post(`/api/orders/${orderId}/return`, { reason });
+export const acceptReturn = (orderId, condition) => post(`/api/orders/${orderId}/return/accept`, { condition });
+export const reportMissing = (orderId) => post(`/api/orders/${orderId}/missing`);
+export const hubArrived = (orderId) => post(`/api/orders/${orderId}/hub-arrived`);
+export const handoverSupply = (supplyId) => post(`/api/supplies/${supplyId}/handover`);
+export const demoDays = (days) => post('/api/demo/days', { days });
+
 // водитель рейсов
 export const fetchCourierDashboard = () => request('/api/courier/me/dashboard');
 export const setCourierLocation = (lat, lon) => post('/api/courier/me/location', { lat, lon });

@@ -11,10 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from . import runs, service, supplier
+from . import runs, scenarios, service, supplier
 from .auth import check_password, current_account, find_account, hash_password, issue_token, require, user_view
 from .demand import city_demand_table, demand_data
-from .db import Account, AuthToken, Courier, get_session, init_db, reset_demo
+from . import finance
+from .db import Account, AuthToken, Courier, Order, get_session, init_db, reset_demo
 from .economics import Params
 from .planner import build_plan, order_decisions, pvz_list
 
@@ -253,6 +254,65 @@ def get_supplier_dashboard(acc: Account = Depends(supplier_only), s: Session = D
 def post_accept_supply(supply_id: int, acc: Account = Depends(pvz_only), s: Session = Depends(get_session)):
     """ПВЗ принял поставку от поставщика на полку."""
     return supplier.accept_supply(s, acc.pvz_id, supply_id)
+
+
+# ================= Сценарии: возврат, сбой, хаб, долгое хранение =================
+
+class ReturnRequest(BaseModel):
+    reason: str = Field(..., pattern="^(ok|defect)$", description="ok — не подошёл, defect — брак")
+
+
+@app.post("/api/orders/{order_id}/return")
+def post_return(order_id: int, req: ReturnRequest, acc: Account = Depends(buyer_only), s: Session = Depends(get_session)):
+    """Покупатель оформляет возврат полученного заказа."""
+    return service.order_view(s, scenarios.request_return(s, acc, order_id, req.reason))
+
+
+class ReturnAcceptRequest(BaseModel):
+    condition: str = Field(..., pattern="^(ok|defect)$", description="ok — целый, вернуть на полку; defect — брак, продавцу")
+
+
+@app.post("/api/orders/{order_id}/return/accept")
+def post_return_accept(order_id: int, req: ReturnAcceptRequest, acc: Account = Depends(pvz_only), s: Session = Depends(get_session)):
+    """ПВЗ принял возврат: целый товар остаётся на полке, брак уходит продавцу."""
+    return service.order_view(s, scenarios.accept_return(s, acc.pvz_id, order_id, req.condition))
+
+
+@app.post("/api/orders/{order_id}/missing")
+def post_missing(order_id: int, acc: Account = Depends(pvz_only), s: Session = Depends(get_session)):
+    """Сбой: товара нет на полке — штраф ПВЗ и перенаправление заказа в другой ПВЗ или через хаб."""
+    return service.order_view(s, scenarios.report_missing(s, acc.pvz_id, order_id))
+
+
+@app.post("/api/orders/{order_id}/hub-arrived")
+def post_hub_arrived(order_id: int, acc: Account = Depends(pvz_only), s: Session = Depends(get_session)):
+    """Заказ пришёл с хаба по магистрали — можно выдавать."""
+    return service.order_view(s, scenarios.hub_arrived(s, acc.pvz_id, order_id))
+
+
+@app.post("/api/supplies/{supply_id}/handover")
+def post_handover(supply_id: int, acc: Account = Depends(pvz_only), s: Session = Depends(get_session)):
+    """ПВЗ передал товар на вывоз продавцу (брак или неликвид после 45 дней)."""
+    return scenarios.handover_to_seller(s, acc.pvz_id, supply_id)
+
+
+@app.get("/api/orders/{order_id}/economics")
+def get_economics(order_id: int, s: Session = Depends(get_session)):
+    """Экономика заказа: покупатель, продавец, ПВЗ, логистика и сравнение с хабом."""
+    o = s.get(Order, order_id)
+    if o is None:
+        raise HTTPException(404, "Нет такого заказа")
+    return {"order_id": o.id, "mode": o.mode, **finance.order_economics(s, o)}
+
+
+class DaysRequest(BaseModel):
+    days: int = Field(10, ge=1, le=60)
+
+
+@app.post("/api/demo/days")
+def post_days(req: DaysRequest, s: Session = Depends(get_session)):
+    """Демо «прошло N дней»: начислить хранение, после 30 дней — продавцу, на 45-й день — вывоз неликвида."""
+    return scenarios.advance_days(s, req.days)
 
 
 @app.post("/api/demo/reset")
