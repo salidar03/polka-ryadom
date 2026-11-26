@@ -6,7 +6,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import Account, Notification, Order, Product, Pvz, Stock, Supply
-from .demand import category, plan_distribution
+from .demand import SPACING_M, category, plan_distribution
+from .similar import similar_products
+
+BADGE = ("Если разложить товар по ПВЗ, покупатель с большей вероятностью заберёт именно ваш товар: "
+         "когда похожий товар есть у нескольких продавцов, мы предлагаем тот, что уже лежит на полке рядом — "
+         "его можно забрать сразу и дешевле.")
 
 
 def _pvz_points(s: Session) -> list[dict]:
@@ -27,8 +32,29 @@ def _check(name: str, price: int, qty: int, share: float, horizon: int) -> None:
         raise HTTPException(400, "Срок на полке — от 7 до 30 дней")
 
 
-def preview(s: Session, cat_id: str, qty: int, share: float, horizon: int) -> dict:
-    return plan_distribution(_pvz_points(s), cat_id, qty, share, horizon)
+def competitors(s: Session, acc: Account, name: str, cat_id: str) -> list[dict]:
+    """Такой же товар у других продавцов: сколько ПВЗ города уже держат его на полке."""
+    if not name.strip():
+        return []
+    probe = Product(id=None, name=name, price=0, category=category(cat_id)["id"], supplier_account_id=acc.id)
+    out = []
+    for pr in similar_products(s, probe):
+        points = s.scalar(select(func.count()).select_from(Stock).where(Stock.product_id == pr.id, Stock.qty > 0)) or 0
+        out.append({"id": pr.id, "name": pr.name, "emoji": pr.emoji, "price": pr.price,
+                    "supplier": pr.supplier_name or "Wildberries", "shelf_points": int(points)})
+    return sorted(out, key=lambda x: -x["shelf_points"])
+
+
+def _with_market(s: Session, acc: Account, name: str, cat_id: str, plan: dict) -> dict:
+    rivals = competitors(s, acc, name, cat_id)
+    plan["competitors"] = rivals
+    plan["badge"] = BADGE
+    plan["spacing_m"] = SPACING_M
+    return plan
+
+
+def preview(s: Session, acc: Account, name: str, cat_id: str, qty: int, share: float, horizon: int) -> dict:
+    return _with_market(s, acc, name, cat_id, plan_distribution(_pvz_points(s), cat_id, qty, share, horizon))
 
 
 def upload(s: Session, acc: Account, name: str, cat_id: str, price: int, qty: int, share: float, horizon: int, accept_plan: bool) -> dict:
@@ -42,6 +68,8 @@ def upload(s: Session, acc: Account, name: str, cat_id: str, price: int, qty: in
     s.add(prod)
     s.flush()
     plan = plan_distribution(_pvz_points(s), cat["id"], qty, share, horizon) if accept_plan else None
+    if plan:
+        _with_market(s, acc, name, cat["id"], plan)
     on_shelves = 0
     if plan:
         for row in plan["cities"]:
@@ -103,5 +131,7 @@ def dashboard(s: Session, acc: Account) -> dict:
             "on_shelf_now": int(on_shelf or 0),
             "sold": len(sold), "revenue": sum(o.price - o.discount for o in sold),
             "cities": sorted({x.city for x in sup if x.kind in ("shelf", "city")}),
+            "shelf_points": len({x.pvz_id for x in sup if x.kind == "shelf"}),
+            "competitors": len(similar_products(s, pr)),
         })
-    return {"supplier": {"id": acc.id, "name": acc.name, "login": acc.login}, "products": items}
+    return {"supplier": {"id": acc.id, "name": acc.name, "login": acc.login}, "products": items, "badge": BADGE}
