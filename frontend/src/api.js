@@ -54,11 +54,12 @@ export const removeStock = (productId, qty) => request(`/api/pvz/me/stock/${prod
 export const confirmAssembled = (orderId) => post(`/api/orders/${orderId}/assembled`);
 export const issueOrder = (orderId, code) => post(`/api/orders/${orderId}/issued`, { code });
 
-// курьер
+// водитель рейсов
 export const fetchCourierDashboard = () => request('/api/courier/me/dashboard');
 export const setCourierLocation = (lat, lon) => post('/api/courier/me/location', { lat, lon });
-export const markPicked = (orderId) => post(`/api/orders/${orderId}/picked`);
-export const markDelivered = (orderId) => post(`/api/orders/${orderId}/delivered`);
+export const startRun = () => post('/api/courier/me/run/start');
+export const markPicked = (orderId) => post(`/api/orders/${orderId}/picked`);           // «Заказ взят с точки»
+export const markUnloaded = (runId, stopIndex) => post(`/api/runs/${runId}/stops/${stopIndex}/unloaded`);
 
 // поставщик
 export const fetchDemand = () => request('/api/demand');

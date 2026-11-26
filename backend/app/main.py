@@ -1,6 +1,6 @@
-"""API «Полка рядом»: городские заказы Wildberries из ПВЗ в ПВЗ без хаба.
+"""API «Полка рядом»: городские заказы Wildberries из ПВЗ в ПВЗ без хаба — рейсами машины по расписанию.
 
-Документация API открывается на /docs. Разделы покупателя, ПВЗ и курьера
+Документация API открывается на /docs. Разделы покупателя, ПВЗ, водителя и поставщика
 требуют входа: токен из /api/auth/login передаётся в заголовке
 `Authorization: Bearer <токен>`.
 """
@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from . import service, supplier
+from . import runs, service, supplier
 from .auth import check_password, current_account, find_account, hash_password, issue_token, require, user_view
 from .demand import city_demand_table, demand_data
 from .db import Account, AuthToken, Courier, get_session, init_db, reset_demo
@@ -25,7 +25,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Полка рядом API", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="Полка рядом API", version="1.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 CITY_CENTER = (56.6345, 47.8925)  # Йошкар-Ола
@@ -44,7 +44,7 @@ class RegisterRequest(BaseModel):
     login: str = Field(..., min_length=3, max_length=60, pattern=r"^[A-Za-z0-9_.@+-]+$")
     password: str = Field(..., min_length=4, max_length=100)
     address: str = Field("", max_length=300)   # для ПВЗ
-    lat: float | None = None                   # для ПВЗ — точка на карте; для курьера — где начинает смену
+    lat: float | None = None                   # для ПВЗ — точка на карте; для водителя — где начинает смену
     lon: float | None = None
 
 
@@ -69,8 +69,6 @@ def register(req: RegisterRequest, s: Session = Depends(get_session)):
         acc.courier_id = c.id
     s.add(acc)
     s.flush()
-    if req.role == "courier":
-        service.dispatch_waiting(s)  # новый свободный курьер сразу получает заказ из очереди, если он есть
     token = issue_token(s, acc)
     return {"token": token, "user": user_view(s, acc)}
 
@@ -159,7 +157,7 @@ def delete_stock(product_id: int, qty: int | None = Query(None, ge=1, le=500, de
 
 @app.post("/api/orders/{order_id}/assembled")
 def post_assembled(order_id: int, acc: Account = Depends(pvz_only), s: Session = Depends(get_session)):
-    """ПВЗ подтвердил сбор заказа → назначается ближайший свободный курьер."""
+    """ПВЗ подтвердил сбор и упаковку → заказ ждёт ближайшего рейса машины (10:00, 13:00, 16:00, 19:00)."""
     return service.confirm_assembled(s, acc.pvz_id, order_id)
 
 
@@ -195,14 +193,22 @@ def post_location(req: LocationRequest, acc: Account = Depends(courier_only), s:
     return service.set_courier_location(s, acc.courier_id, req.lat, req.lon)
 
 
+@app.post("/api/courier/me/run/start")
+def post_run_start(acc: Account = Depends(courier_only), s: Session = Depends(get_session)):
+    """«Выехать в рейс сейчас»: не ждать расписания — забрать готовые заказы в пересекающихся кругах."""
+    return runs.start_now(s, acc.courier_id)
+
+
 @app.post("/api/orders/{order_id}/picked")
 def post_picked(order_id: int, acc: Account = Depends(courier_only), s: Session = Depends(get_session)):
-    return service.courier_picked(s, acc.courier_id, order_id)
+    """«Заказ взят с точки» — водитель забрал упакованный заказ в ПВЗ."""
+    return runs.pick(s, acc.courier_id, order_id)
 
 
-@app.post("/api/orders/{order_id}/delivered")
-def post_delivered(order_id: int, acc: Account = Depends(courier_only), s: Session = Depends(get_session)):
-    return service.courier_delivered(s, acc.courier_id, order_id)
+@app.post("/api/runs/{run_id}/stops/{stop_index}/unloaded")
+def post_unloaded(run_id: int, stop_index: int, acc: Account = Depends(courier_only), s: Session = Depends(get_session)):
+    """«Выгрузил заказы» в ПВЗ покупателя на этой остановке рейса."""
+    return runs.unload(s, acc.courier_id, run_id, stop_index)
 
 
 # ================= Поставщик =================
@@ -229,7 +235,7 @@ class SupplyPlanRequest(BaseModel):
 @app.post("/api/supplier/plan")
 def post_supplier_plan(req: SupplyPlanRequest, acc: Account = Depends(supplier_only), s: Session = Depends(get_session)):
     """Предложение: сколько штук в какой город и ПВЗ по спросу (ничего не сохраняет)."""
-    return supplier.preview(s, req.category, req.qty, req.share, req.horizon_days)
+    return supplier.preview(s, acc, req.name, req.category, req.qty, req.share, req.horizon_days)
 
 
 @app.post("/api/supplier/products")
@@ -251,7 +257,7 @@ def post_accept_supply(supply_id: int, acc: Account = Depends(pvz_only), s: Sess
 
 @app.post("/api/demo/reset")
 def post_reset():
-    """Сбросить демо: заказы и уведомления удаляются, полки и курьеры — как в начале. Аккаунты остаются."""
+    """Сбросить демо: заказы, рейсы, поставки и уведомления удаляются, полки пустеют. Аккаунты остаются."""
     reset_demo()
     return {"status": "ok"}
 

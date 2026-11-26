@@ -4,7 +4,9 @@
     жители / 1000 × товаров в день на 1000 жителей × доля категории × доля одного ходового товара.
 Небольшая часть партии (по умолчанию 15%) раскладывается по городам пропорционально спросу,
 но не больше спроса за срок «полки» — чтобы товар не залёживался. Остальное едет на склад WB.
-В Йошкар-Оле доля города делится между опорными ПВЗ районов по спросу вокруг них.
+В Йошкар-Оле доля города делится между ПВЗ так, чтобы товар одного продавца не повторялся
+в пунктах ближе 700 м друг от друга: сначала самые спросовые ПВЗ, следующий — не ближе 700 м
+к уже выбранным. Каждый выбранный ПВЗ обслуживает соседние пункты, для которых он ближайший.
 """
 import json
 from functools import lru_cache
@@ -12,7 +14,7 @@ from pathlib import Path
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "demand.json"
 MIN_PER_PVZ = 2          # меньше двух штук на полку не везём
-PVZ_ZONE_RADIUS_M = 700  # районы, как в аналитике
+SPACING_M = 700          # товар одного продавца не повторяется в ПВЗ ближе 700 м друг от друга
 
 
 @lru_cache(maxsize=1)
@@ -59,6 +61,46 @@ def _largest_remainder(total: int, weights: list[float]) -> list[int]:
     return base
 
 
+def spaced_points(pvz_points: list[dict], limit: int, spacing_m: float = SPACING_M) -> list[dict]:
+    """Самые спросовые ПВЗ, где каждый следующий не ближе spacing_m к уже выбранным."""
+    from .geo import dist_m
+
+    chosen: list[dict] = []
+    for p in sorted(pvz_points, key=lambda p: (-p["weight"], p["id"])):
+        if len(chosen) >= limit:
+            break
+        if all(dist_m((p["lat"], p["lon"]), (c["lat"], c["lon"])) >= spacing_m for c in chosen):
+            chosen.append(p)
+    return chosen
+
+
+def spread_over_pvz(pvz_points: list[dict], qty: int, spacing_m: float = SPACING_M) -> list[dict]:
+    """Разложить qty штук по ПВЗ города: интервал между точками ≥ spacing_m, штуки — по спросу вокруг точки."""
+    from .geo import dist_m
+
+    chosen = spaced_points(pvz_points, max(1, qty // MIN_PER_PVZ), spacing_m)
+    if not chosen:
+        return []
+    while True:
+        # каждый ПВЗ города «тянется» к ближайшей выбранной точке — её спрос и делим
+        served = {c["id"]: [] for c in chosen}
+        for p in pvz_points:
+            near = min(chosen, key=lambda c: dist_m((p["lat"], p["lon"]), (c["lat"], c["lon"])))
+            served[near["id"]].append(p)
+        split = _largest_remainder(qty, [sum(x["weight"] for x in served[c["id"]]) for c in chosen])
+        if len(chosen) == 1 or min(split) >= MIN_PER_PVZ:
+            break
+        chosen.pop(split.index(min(split)))  # меньше двух штук на полку не везём — точку убираем
+    out = []
+    for c, q in zip(chosen, split):
+        if q <= 0:
+            continue
+        others = [dist_m((c["lat"], c["lon"]), (o["lat"], o["lon"])) for o in chosen if o["id"] != c["id"]]
+        out.append({"id": c["id"], "name": c["name"], "lat": c["lat"], "lon": c["lon"], "qty": q,
+                    "zone_pvz": len(served[c["id"]]), "nearest_same_m": round(min(others)) if others else None})
+    return out
+
+
 def plan_distribution(pvz_points: list[dict], cat_id: str, qty: int, share: float, horizon_days: int) -> dict:
     """Предложение поставщику: сколько штук в какой город и в какие ПВЗ Йошкар-Олы, остальное — на склад WB."""
     d = demand_data()
@@ -78,21 +120,11 @@ def plan_distribution(pvz_points: list[dict], cat_id: str, qty: int, share: floa
                      "days_cover": round(a / f["sku_per_day"], 1) if f["sku_per_day"] else 0,
                      "pvz_network": f["pvz_network"], "pvz": []})
 
-    # Йошкар-Ола: доля города — по опорным ПВЗ районов, где спрос выше
+    # Йошкар-Ола: доля города — по ПВЗ с интервалом не меньше 700 м
     base = next(r for r in rows if r["pvz_network"])
     if base["qty"] > 0 and pvz_points:
-        from .geo import build_zones
-        pos = {p["id"]: p for p in pvz_points}
-        zones = build_zones(pvz_points, PVZ_ZONE_RADIUS_M)
-        zones = sorted(zones, key=lambda z: sum(pos[i]["weight"] for i in z["pvz_ids"]), reverse=True)
-        n = max(1, min(len(zones), base["qty"] // MIN_PER_PVZ))
-        top = zones[:n]
-        split = _largest_remainder(base["qty"], [sum(pos[i]["weight"] for i in z["pvz_ids"]) for z in top])
-        for z, q in zip(top, split):
-            if q > 0:
-                c = pos[z["center_id"]]
-                base["pvz"].append({"id": c["id"], "name": c["name"], "lat": c["lat"], "lon": c["lon"], "qty": q,
-                                    "zone_pvz": len(z["pvz_ids"])})
+        base["pvz"] = spread_over_pvz(pvz_points, base["qty"])
+        base["spacing_m"] = SPACING_M
 
     on_shelves = sum(r["qty"] for r in rows)
     return {

@@ -30,10 +30,10 @@ export default function BuyerView({ user }) {
   }, [product, myPvz]);
   usePoll(() => { fetchMyOrders().then(setOrders).catch(() => {}); }, []);
 
-  const order = async (mode, sourceId) => {
+  const order = async (mode, sourceId, productId = product.id) => {
     setBusy(true);
     try {
-      const o = await createOrder({ product_id: product.id, buyer_pvz_id: myPvz, mode, source_pvz_id: sourceId });
+      const o = await createOrder({ product_id: productId, buyer_pvz_id: myPvz, mode, source_pvz_id: sourceId });
       setPlaced(o);
       setProduct(null);
       setOrders(await fetchMyOrders());
@@ -50,6 +50,23 @@ export default function BuyerView({ user }) {
   const nearest = offer?.nearest;
   const others = (offer?.options || []).filter((o) => o.id !== nearest?.id);
   const stockIds = new Set((offer?.options || []).map((o) => o.id));
+  const alts = offer?.alternatives || [];
+  const alt = alts[0];
+  // такой же товар у другого продавца лежит ближе, чем этот, — предлагаем забрать сразу
+  const altFirst = alt && !offer?.here && (!nearest || alt.pvz.distance_m < nearest.distance_m);
+  const altCard = alt && (
+    <div className={`card ${altFirst ? 'good' : ''}`}>
+      <h3>{altFirst ? 'Такой же товар у другого продавца — заберите сейчас' : 'Такой же товар есть у другого продавца'}</h3>
+      <p><b>{alt.product.emoji} {alt.product.name}</b> · продавец «{alt.product.supplier || 'Wildberries'}»</p>
+      <p className="muted">
+        {alt.here ? 'Лежит в выбранном ПВЗ' : `«${alt.pvz.name}» · ${km(alt.pvz.distance_m)} от выбранного ПВЗ · ~${alt.pvz.walk_min} мин пешком`} · на полке {alt.pvz.qty} шт.
+      </p>
+      <p className="price-line"><b>{fmt(alt.pickup_price)} ₽</b> <s className="muted">{fmt(alt.price)} ₽</s> <span className="chip good">забрать сразу</span></p>
+      <button type="button" className={altFirst ? 'primary' : 'secondary'} disabled={busy}
+        onClick={() => order('pickup', alt.pvz.id, alt.product.id)}>Забрать {alt.here ? 'здесь' : 'там'} за {fmt(alt.pickup_price)} ₽</button>
+      {alts.length > 1 && <p className="muted small">Ещё у {alts.length - 1} продавц{alts.length - 1 === 1 ? 'а' : 'ов'}.</p>}
+    </div>
+  );
 
   return (
     <div className="app">
@@ -94,10 +111,11 @@ export default function BuyerView({ user }) {
               </select>
             </label>
 
+            {altFirst && altCard}
             {offer && (offer.here ? (
               <div className="card good">
                 <h3>Товар уже в выбранном ПВЗ</h3>
-                <p>Заберите сегодня за <b>{fmt(offer.pickup_price)} ₽</b> <s className="muted">{fmt(offer.price)} ₽</s> — курьер не нужен, поэтому дешевле.</p>
+                <p>Заберите сегодня за <b>{fmt(offer.pickup_price)} ₽</b> <s className="muted">{fmt(offer.price)} ₽</s> — машина не нужна, поэтому дешевле.</p>
                 <button type="button" className="primary" disabled={busy} onClick={() => order('pickup', offer.here.id)}>Забрать сегодня за {fmt(offer.pickup_price)} ₽</button>
               </div>
             ) : nearest ? (
@@ -111,18 +129,19 @@ export default function BuyerView({ user }) {
                 </div>
                 <div className="card">
                   <h3>Или доставим в «{me?.name}»</h3>
-                  <p className="muted">Завтра, {fmt(offer.price)} ₽. Курьер привезёт из «{nearest.name}».</p>
+                  <p className="muted">{fmt(offer.price)} ₽. ПВЗ упакует заказ, и машина заберёт его ближайшим рейсом ({offer.schedule}) из «{nearest.name}».</p>
                   <button type="button" className="secondary" disabled={busy} onClick={() => order('deliver', nearest.id)}>Заказать в мой ПВЗ за {fmt(offer.price)} ₽</button>
                 </div>
               </>
             ) : (
               <div className="card">
-                <h3>В ПВЗ города этого товара нет</h3>
+                <h3>{altFirst ? 'Или закажите этот товар через хаб' : 'В ПВЗ города этого товара нет'}</h3>
                 <p className="muted">Заказ поедет со склада через хаб — {offer.hub_days} дня, {fmt(offer.price)} ₽.</p>
                 <button type="button" className="primary" disabled={busy} onClick={() => order('hub', null)}>Заказать через хаб</button>
               </div>
             ))}
 
+            {!altFirst && altCard}
             {others.length > 0 && (
               <button type="button" className="link" onClick={() => setShowAll((v) => !v)}>
                 {showAll ? 'Скрыть другие ПВЗ' : `Посмотреть в других ПВЗ (${others.length})`}
@@ -152,7 +171,7 @@ export default function BuyerView({ user }) {
                   <br /><StatusChip status={o.status} label={o.status_label} />
                   <br /><span className="muted small">
                     {o.mode === 'pickup' ? `Забрать в «${o.dest.name}»` : o.mode === 'hub' ? `Через хаб в «${o.dest.name}»` : `«${o.source.name}» → «${o.dest.name}»`}
-                    {o.courier && !['issued', 'delivered'].includes(o.status) ? ` · курьер ${o.courier.name}` : ''}
+                    {o.run && !['issued', 'delivered'].includes(o.status) ? ` · рейс №${o.run.id}, водитель ${o.courier?.name || ''}` : ''}
                   </span>
                 </div>
                 {['ready', 'delivered'].includes(o.status) && <span className="code" title="Код выдачи">{o.code}</span>}
@@ -163,7 +182,15 @@ export default function BuyerView({ user }) {
       </aside>
 
       <CityMap>
-        <FlyTo points={nearest && me ? [[me.lat, me.lon], [nearest.lat, nearest.lon]] : me ? [[me.lat, me.lon]] : []} />
+        <FlyTo points={
+          me && altFirst && !alt.here ? [[me.lat, me.lon], [alt.pvz.lat, alt.pvz.lon]]
+            : nearest && me ? [[me.lat, me.lon], [nearest.lat, nearest.lon]] : me ? [[me.lat, me.lon]] : []
+        } />
+        {me && altFirst && !alt.here && (
+          <CircleMarker center={[alt.pvz.lat, alt.pvz.lon]} radius={9} pathOptions={{ color: '#2F7A4D', weight: 3, fillColor: '#FFFFFF', fillOpacity: 1 }}>
+            <Tooltip permanent direction="top">Такой же товар: {alt.pvz.name}</Tooltip>
+          </CircleMarker>
+        )}
         {pvz.map((p) => {
           const isMe = p.id === myPvz;
           const has = stockIds.has(p.id);
@@ -179,6 +206,9 @@ export default function BuyerView({ user }) {
             </CircleMarker>
           );
         })}
+        {me && altFirst && !alt.here && (
+          <Polyline positions={[[me.lat, me.lon], [alt.pvz.lat, alt.pvz.lon]]} pathOptions={{ color: '#2F7A4D', weight: 3, dashArray: '2 6' }} />
+        )}
         {me && nearest && nearest.id !== me.id && (
           <Polyline positions={[[me.lat, me.lon], [nearest.lat, nearest.lon]]} pathOptions={{ color: '#2F7A4D', weight: 3, dashArray: '6 8' }} />
         )}

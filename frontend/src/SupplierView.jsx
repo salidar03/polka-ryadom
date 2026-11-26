@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CircleMarker, Tooltip } from 'react-leaflet';
+import { Circle, CircleMarker, Tooltip } from 'react-leaflet';
 import { fetchDemand, fetchSupplierDashboard, supplierPlan, supplierUpload } from './api.js';
 import { CityMap, FlyTo, fmt, usePoll } from './common.jsx';
 
@@ -28,7 +28,7 @@ export default function SupplierView({ user }) {
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [form.category, form.qty, form.price, form.share, form.horizon_days]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form.name, form.category, form.qty, form.price, form.share, form.horizon_days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k, num) => (e) => setForm({ ...form, [k]: num ? Number(e.target.value) : e.target.value });
 
@@ -52,6 +52,8 @@ export default function SupplierView({ user }) {
   const yo = cities.find((c) => c.pvz_network);
   const maxQty = Math.max(1, ...cities.map((c) => c.qty));
   const table = demand?.city;
+  const rivals = plan?.competitors || [];
+  const badge = plan?.badge || dash?.badge;
 
   return (
     <div className="app">
@@ -121,7 +123,22 @@ export default function SupplierView({ user }) {
               </tbody>
             </table>
             {yo?.pvz.length > 0 && (
-              <p className="muted small">★ Йошкар-Ола: {yo.pvz.map((p) => `${p.name} — ${p.qty} шт.`).join(', ')} — опорные ПВЗ районов с самым высоким спросом. «Хватит» — на сколько дней спроса хватит товара на полках города.</p>
+              <p className="muted small">
+                ★ Йошкар-Ола: {yo.pvz.map((p) => `${p.name} — ${p.qty} шт.`).join(', ')}. Это ПВЗ с самым высоким спросом,
+                и между ними не меньше {plan.spacing_m} м — ваш товар не повторяется в соседних пунктах, каждый обслуживает свой район.
+                «Хватит» — на сколько дней спроса хватит товара на полках города.
+              </p>
+            )}
+            {badge && (
+              <div className="label-card">
+                <span className="label-tag">Метка</span>
+                <p>{badge}</p>
+                {rivals.length > 0 && (
+                  <p className="small">
+                    Похожий товар уже продают: {rivals.map((r) => `«${r.name}» (${r.supplier}, ${fmt(r.price)} ₽, на полках ${r.shelf_points} ПВЗ)`).join('; ')}.
+                  </p>
+                )}
+              </div>
             )}
             <div className="actions">
               <button type="button" className="primary" disabled={busy} onClick={() => upload(true)}>Загрузить и разложить по плану</button>
@@ -137,7 +154,11 @@ export default function SupplierView({ user }) {
             <div key={p.id} className="card">
               <p className="row-between"><b>{p.emoji} {p.name}</b><b>{fmt(p.price)} ₽</b></p>
               <p className="muted small">{p.category} · партия {fmt(p.total)} шт.: на полки ПВЗ {fmt(p.to_pvz)} (принято {fmt(p.accepted)}), в города {fmt(p.to_cities)}, на склад WB {fmt(p.to_warehouse)}</p>
-              <p className="small">Сейчас на полках: <b>{fmt(p.on_shelf_now)} шт.</b> · продано: <b>{p.sold}</b> · выручка: <b>{fmt(p.revenue)} ₽</b></p>
+              <p className="small">Сейчас на полках: <b>{fmt(p.on_shelf_now)} шт.</b>{p.shelf_points ? ` в ${p.shelf_points} ПВЗ` : ''} · продано: <b>{p.sold}</b> · выручка: <b>{fmt(p.revenue)} ₽</b></p>
+              {p.competitors > 0 && (
+                <p className="small"><span className="label-tag">Метка</span> Похожий товар есть ещё у {p.competitors} продавц{p.competitors === 1 ? 'а' : 'ов'}.
+                  {p.to_pvz ? ' Ваш лежит на полках — покупателю рядом предложим его.' : ' Ваш товар только на складе — покупатель рядом скорее заберёт чужой с полки.'}</p>
+              )}
             </div>
           ))}
         </section>
@@ -165,6 +186,9 @@ export default function SupplierView({ user }) {
             pathOptions={{ color: c.pvz_network ? '#E8742A' : '#14213D', weight: 3, fillColor: '#E8742A', fillOpacity: c.qty ? 0.45 : 0.05 }}>
             <Tooltip permanent direction="top">{c.city}: {fmt(c.qty)} шт.</Tooltip>
           </CircleMarker>
+        ))}
+        {yo?.pvz.map((p) => (
+          <Circle key={`z${p.id}`} center={[p.lat, p.lon]} radius={350} pathOptions={{ color: '#7B2D8E', weight: 1, fillOpacity: 0.08 }} />
         ))}
         {yo?.pvz.map((p) => (
           <CircleMarker key={`p${p.id}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: '#7B2D8E', weight: 2, fillColor: '#FFFFFF', fillOpacity: 1 }}>
