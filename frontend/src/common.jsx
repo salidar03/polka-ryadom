@@ -6,12 +6,21 @@ export const CITY_CENTER = [56.6345, 47.8925]; // Йошкар-Ола
 export const ROLES = {
   buyer: { title: 'Покупатель', text: 'Заказать товар и забрать его в ПВЗ рядом — сразу и дешевле, или с доставкой в свой ПВЗ.', icon: '🛍️' },
   pvz: { title: 'ПВЗ', text: 'Пункт выдачи: адрес, полка с товарами, сборка заказов и выдача по коду.', icon: '🏬' },
-  courier: { title: 'Доставка', text: 'Курьер: задания «забрать в одном ПВЗ — отвезти в другой», маршрут и заработок.', icon: '🚗' },
+  courier: { title: 'Доставка', text: 'Водитель: рейсы по расписанию через соседние ПВЗ, маршрут по улицам и заработок за рейс.', icon: '🚗' },
   supplier: { title: 'Поставщик', text: 'Загрузить товар — система по спросу предложит разложить часть партии по ПВЗ городов.', icon: '🏭' },
 };
 export const WB = '#7B2D8E';
 export const nf = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
 export const fmt = (n) => nf.format(Math.round(n ?? 0));
+/** 1 остановка, 3 остановки, 5 остановок. */
+export function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b === 1) return one;
+  if (b >= 2 && b <= 4) return few;
+  return many;
+}
 export const km = (m) => (m < 1000 ? `${fmt(m)} м` : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(m / 1000)} км`);
 
 /** Повторяет fn каждые ms миллисекунд, пока компонент на экране. */
@@ -68,7 +77,7 @@ export function locateMe() {
 }
 
 export function StatusChip({ status, label }) {
-  const tone = { issued: 'done', delivered: 'good', ready: 'good', via_hub: 'muted' }[status] || 'work';
+  const tone = { issued: 'done', delivered: 'good', ready: 'good', via_hub: 'muted', awaiting_run: 'warn' }[status] || 'work';
   return <span className={`chip ${tone}`}>{label}</span>;
 }
 
